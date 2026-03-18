@@ -32,6 +32,15 @@ from .strategies.dashboard import (
     SearchDashboardsHandler,
     UpdateWidgetHandler,
 )
+from .strategies.entities import (
+    AddTagsHandler,
+    DeleteTagsHandler,
+    EntitySearchHandler,
+    GetEntityTagsHandler,
+    GetSyntheticResultsHandler,
+    ListServiceLevelsHandler,
+    ListSyntheticMonitorsHandler,
+)
 from .strategies.monitoring import (
     AlertViolationsHandler,
     AppErrorsHandler,
@@ -81,6 +90,14 @@ class ToolHandlers:
             "list_notification_destinations": ListNotificationDestinationsHandler(client, config),
             "list_notification_channels": ListNotificationChannelsHandler(client, config),
             "list_workflows": ListWorkflowsHandler(client, config),
+            # Entity tools
+            "entity_search": EntitySearchHandler(client, config),
+            "get_entity_tags": GetEntityTagsHandler(client, config),
+            "add_tags_to_entity": AddTagsHandler(client, config),
+            "delete_tags_from_entity": DeleteTagsHandler(client, config),
+            "list_service_levels": ListServiceLevelsHandler(client, config),
+            "list_synthetic_monitors": ListSyntheticMonitorsHandler(client, config),
+            "get_synthetic_results": GetSyntheticResultsHandler(client, config),
         }
 
     async def handle_tool_call(self, name: str, arguments: dict[str, Any]) -> list[TextContent]:

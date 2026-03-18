@@ -533,6 +533,150 @@ def get_alert_tools():
     ]
 
 
+def get_entity_tools():
+    """Get entity search, tagging, service level, and synthetic monitor tools"""
+    return [
+        Tool(
+            name="entity_search",
+            description=(
+                "Search for New Relic entities (APM apps, hosts, synthetic monitors, browsers, etc.) "
+                "by name, type, domain, or tags. Returns GUIDs, alert severity, and metadata. "
+                "Use domain values: APM, INFRA, SYNTH, BROWSER, MOBILE, EXT. "
+                "Use type values: APPLICATION, HOST, MONITOR, etc."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Entity name to search for (partial match)"},
+                    "entity_type": {
+                        "type": "string",
+                        "description": "Entity type filter (e.g. APPLICATION, HOST, MONITOR)",
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Domain filter: APM, INFRA, SYNTH, BROWSER, MOBILE, EXT",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "description": "Tag filters as [{key, value}] pairs",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {"type": "string"},
+                                "value": {"type": "string"},
+                            },
+                            "required": ["key", "value"],
+                        },
+                    },
+                    "account_id": {"type": "string", "description": "Account ID (optional)"},
+                },
+            },
+        ),
+        Tool(
+            name="get_entity_tags",
+            description="Get all tags for a New Relic entity by its GUID. Use entity_search to find GUIDs.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "guid": {"type": "string", "description": "Entity GUID"},
+                    "account_id": {"type": "string", "description": "Account ID (optional)"},
+                },
+                "required": ["guid"],
+            },
+        ),
+        Tool(
+            name="add_tags_to_entity",
+            description="Add or update tags on a New Relic entity. Tags are key-value pairs.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "guid": {"type": "string", "description": "Entity GUID"},
+                    "tags": {
+                        "type": "array",
+                        "description": "Tags to add as [{key, value}] pairs",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {"type": "string"},
+                                "value": {"type": "string"},
+                            },
+                            "required": ["key", "value"],
+                        },
+                    },
+                    "account_id": {"type": "string", "description": "Account ID (optional)"},
+                },
+                "required": ["guid", "tags"],
+            },
+        ),
+        Tool(
+            name="delete_tags_from_entity",
+            description="Delete tag keys (and all their values) from a New Relic entity.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "guid": {"type": "string", "description": "Entity GUID"},
+                    "tag_keys": {
+                        "type": "array",
+                        "description": "Tag keys to delete",
+                        "items": {"type": "string"},
+                    },
+                    "account_id": {"type": "string", "description": "Account ID (optional)"},
+                },
+                "required": ["guid", "tag_keys"],
+            },
+        ),
+        Tool(
+            name="list_service_levels",
+            description=(
+                "List all Service Level Indicators (SLIs/SLOs) for the account. "
+                "Shows objectives, target percentages, time windows, and the NRQL queries "
+                "used to measure good/valid events."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account_id": {"type": "string", "description": "Account ID (optional)"},
+                },
+            },
+        ),
+        Tool(
+            name="list_synthetic_monitors",
+            description=(
+                "List all synthetic monitors with their current status, success rate, "
+                "monitor type (simple, scripted browser, API test, etc.), check period, "
+                "and location health."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "account_id": {"type": "string", "description": "Account ID (optional)"},
+                },
+            },
+        ),
+        Tool(
+            name="get_synthetic_results",
+            description=(
+                "Get recent check results for a specific synthetic monitor. "
+                "Shows pass/fail per location, duration, and error messages. "
+                "Use list_synthetic_monitors to find monitor GUIDs."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "monitor_guid": {"type": "string", "description": "Synthetic monitor entity GUID"},
+                    "hours": {
+                        "type": "integer",
+                        "description": "Hours to look back (default: 24)",
+                        "default": 24,
+                    },
+                    "account_id": {"type": "string", "description": "Account ID (optional)"},
+                },
+                "required": ["monitor_guid"],
+            },
+        ),
+    ]
+
+
 def get_all_tools():
     """Get all available tools"""
-    return get_monitoring_tools() + get_dashboard_tools() + get_alert_tools()
+    return get_monitoring_tools() + get_dashboard_tools() + get_alert_tools() + get_entity_tools()
