@@ -37,6 +37,7 @@ class EntitiesClient(BaseNewRelicClient):
 
         query_string = " AND ".join(parts) if parts else "domain IN ('APM', 'INFRA', 'SYNTH', 'BROWSER')"
 
+        # entitySearch returns Outline types — use only common fields plus Outline-specific fragments
         query = """
         {
           actor {
@@ -54,19 +55,19 @@ class EntitiesClient(BaseNewRelicClient):
                     key
                     values
                   }
-                  ... on ApmApplicationEntity {
+                  ... on ApmApplicationEntityOutline {
                     language
                     applicationId
                   }
-                  ... on SyntheticMonitorEntity {
+                  ... on SyntheticMonitorEntityOutline {
                     monitorType
                     monitorId
                     period
                   }
-                  ... on InfrastructureHostEntity {
+                  ... on InfrastructureHostEntityOutline {
                     hostSummary {
                       cpuUtilizationPercent
-                      memoryUsagePercent
+                      memoryUsedPercent
                     }
                   }
                 }
@@ -146,57 +147,51 @@ class EntitiesClient(BaseNewRelicClient):
 
     async def list_service_levels(self, account_id: str) -> list[dict[str, Any]]:
         """List service level indicators (SLIs) for the account"""
+        # Service levels are entities with type SERVICE_LEVEL — search via entitySearch
         query = """
         {
           actor {
-            account(id: %s) {
-              serviceLevel {
-                indicators {
+            entitySearch(query: "accountId = %s AND type = 'SERVICE_LEVEL'") {
+              results {
+                entities {
                   guid
                   name
-                  description
-                  entityGuid
-                  createdAt
-                  updatedAt
-                  objectives {
-                    name
-                    description
-                    target
-                    timeWindow {
-                      rolling {
-                        count
-                        unit
-                      }
-                    }
+                  entityType
+                  reporting
+                  tags {
+                    key
+                    values
                   }
-                  resultQueries {
-                    goodEvents {
-                      nrql {
-                        query
-                      }
-                    }
-                    validEvents {
-                      nrql {
-                        query
+                  ... on ServiceLevelIndicatorEntityOutline {
+                    objectives {
+                      name
+                      description
+                      target
+                      timeWindow {
+                        rolling {
+                          count
+                          unit
+                        }
                       }
                     }
                   }
                 }
               }
+              count
             }
           }
         }
         """ % account_id
 
         result = await self.execute_graphql(query)
-        indicators = (
+        entities = (
             result.get("data", {})
             .get("actor", {})
-            .get("account", {})
-            .get("serviceLevel", {})
-            .get("indicators", [])
+            .get("entitySearch", {})
+            .get("results", {})
+            .get("entities", [])
         )
-        return indicators or []
+        return entities or []
 
     async def list_synthetic_monitors(self, account_id: str) -> list[dict[str, Any]]:
         """List synthetic monitors via entity search"""
@@ -210,7 +205,7 @@ class EntitiesClient(BaseNewRelicClient):
                   name
                   alertSeverity
                   reporting
-                  ... on SyntheticMonitorEntity {
+                  ... on SyntheticMonitorEntityOutline {
                     monitorType
                     monitorId
                     period
