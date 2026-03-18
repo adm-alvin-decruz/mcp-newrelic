@@ -159,7 +159,9 @@ Configure your MCP client to connect to the server. Example for Claude Desktop:
 - **`delete_widget`**: Remove widgets from dashboards
 
 ### Entity Management
-- **`entity_search`**: Search for any entity by name, type (APPLICATION, HOST, MONITOR), or domain (APM, INFRA, SYNTH, BROWSER). Returns GUIDs, alert severity, tags, and type-specific fields.
+- **`entity_search`**: Search for any entity by name, type (APPLICATION, HOST, MONITOR, KEY_TRANSACTION), or domain (APM, INFRA, SYNTH, BROWSER, EXT). Supports `limit` (default 25, max 200) and `minimal_output` to reduce response size.
+- **`get_entity`**: Look up a single entity by GUID with full details (name, type, account, tags, permalink, type-specific metadata)
+- **`decode_entity_guid`**: Decode a base64-encoded entity GUID to reveal account ID, domain, entity type, and domain ID without an API call
 - **`get_entity_tags`**: Get all tags for an entity by GUID
 - **`add_tags_to_entity`**: Add or update key-value tags on an entity
 - **`replace_tags_on_entity`**: Replace all tags on an entity (overwrites existing)
