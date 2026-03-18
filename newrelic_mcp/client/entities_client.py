@@ -224,8 +224,10 @@ class EntitiesClient:
         """
         tag_values_input = [{"key": t["key"], "value": t["value"]} for t in tag_values]
         return await self._execute_tag_mutation(
-            mutation, {"guid": guid, "tagValues": tag_values_input},
-            "taggingDeleteTagValuesFromEntity", "delete tag values"
+            mutation,
+            {"guid": guid, "tagValues": tag_values_input},
+            "taggingDeleteTagValuesFromEntity",
+            "delete tag values",
         )
 
     async def list_service_levels(self, account_id: str) -> list[dict[str, Any]] | ApiError:
@@ -339,7 +341,9 @@ class EntitiesClient:
         except API_ERRORS as e:
             return handle_api_error("list synthetic monitors", e)
 
-    async def get_synthetic_results(self, account_id: str, monitor_guid: str, hours: int = 24) -> dict[str, Any] | ApiError:
+    async def get_synthetic_results(
+        self, account_id: str, monitor_guid: str, hours: int = 24
+    ) -> dict[str, Any] | ApiError:
         """Get recent results for a synthetic monitor"""
         entity_query = """
         query($guid: EntityGuid!) {

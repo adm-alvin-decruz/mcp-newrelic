@@ -91,7 +91,10 @@ class AddWidgetHandler(ToolHandlerStrategy):
 
         if raw_configuration is not None:
             if "nrqlQueries" not in raw_configuration:
-                raw_configuration = {**raw_configuration, "nrqlQueries": build_raw_nrql_queries(account_id, widget_query)}
+                raw_configuration = {
+                    **raw_configuration,
+                    "nrqlQueries": build_raw_nrql_queries(account_id, widget_query),
+                }
             widget_config["rawConfiguration"] = raw_configuration
 
         self._unwrap(
@@ -209,7 +212,10 @@ class UpdateWidgetHandler(ToolHandlerStrategy):
             if raw_configuration is None:
                 raw_configuration = {}
             if "nrqlQueries" not in raw_configuration:
-                raw_configuration = {**raw_configuration, "nrqlQueries": build_raw_nrql_queries(account_id, widget_query)}
+                raw_configuration = {
+                    **raw_configuration,
+                    "nrqlQueries": build_raw_nrql_queries(account_id, widget_query),
+                }
 
         if raw_configuration is not None:
             widget_config["rawConfiguration"] = raw_configuration

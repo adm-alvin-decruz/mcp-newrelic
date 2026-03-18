@@ -32,9 +32,7 @@ class BaseNewRelicClient:
 
     def __init__(self, config: NewRelicConfig):
         self.config = config
-        self.base_url = (
-            "https://api.newrelic.com" if config.effective_region == "US" else "https://api.eu.newrelic.com"
-        )
+        self.base_url = "https://api.newrelic.com" if config.effective_region == "US" else "https://api.eu.newrelic.com"
         self.headers: dict[str, str] = {"Api-Key": config.api_key or "", "Content-Type": "application/json"}
         self._http_client = httpx.AsyncClient(
             base_url=self.base_url,

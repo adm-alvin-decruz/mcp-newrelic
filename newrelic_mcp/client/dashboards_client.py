@@ -112,7 +112,9 @@ class DashboardsClient:
         except API_ERRORS as e:
             return handle_api_error("create dashboard", e)
 
-    async def add_widget_to_dashboard(self, dashboard_guid: str, widget_config: dict[str, Any]) -> dict[str, Any] | ApiError:
+    async def add_widget_to_dashboard(
+        self, dashboard_guid: str, widget_config: dict[str, Any]
+    ) -> dict[str, Any] | ApiError:
         """Add a widget to an existing dashboard - requires page GUID, not dashboard GUID"""
 
         get_pages_query = """
@@ -289,7 +291,9 @@ class DashboardsClient:
         except API_ERRORS as e:
             return handle_api_error("get dashboard widgets", e)
 
-    async def update_widget(self, page_guid: str, widget_id: str, widget_config: dict[str, Any]) -> dict[str, Any] | ApiError:
+    async def update_widget(
+        self, page_guid: str, widget_id: str, widget_config: dict[str, Any]
+    ) -> dict[str, Any] | ApiError:
         """Update an existing widget on a dashboard page"""
         mutation = """
         mutation($guid: EntityGuid!, $widgets: [DashboardUpdateWidgetInput!]!) {

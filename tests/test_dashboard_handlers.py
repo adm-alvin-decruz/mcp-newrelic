@@ -18,7 +18,9 @@ from newrelic_mcp.types import ApiError, PaginatedResult, ToolError
 class TestGetDashboardsHandler:
     async def test_success_returns_formatted_list(self, mock_client, config):
         mock_client.dashboards.get_dashboards.return_value = PaginatedResult(
-            items=[{"name": "My Dashboard", "guid": "abc123", "createdAt": "2026-01-01", "permalink": "https://nr.com/d/1"}]
+            items=[
+                {"name": "My Dashboard", "guid": "abc123", "createdAt": "2026-01-01", "permalink": "https://nr.com/d/1"}
+            ]
         )
         handler = GetDashboardsHandler(mock_client, config)
         result = await handler.handle({}, "1234567")
@@ -87,7 +89,11 @@ class TestAddWidgetHandler:
         mock_client.dashboards.add_widget_to_dashboard.return_value = {"success": True}
         handler = AddWidgetHandler(mock_client, config)
         result = await handler.handle(
-            {"dashboard_guid": "MTIzNDU2Nzg5MA==", "widget_title": "My Widget", "widget_query": "SELECT count(*) FROM Transaction"},
+            {
+                "dashboard_guid": "MTIzNDU2Nzg5MA==",
+                "widget_title": "My Widget",
+                "widget_query": "SELECT count(*) FROM Transaction",
+            },
             "1234567",
         )
 

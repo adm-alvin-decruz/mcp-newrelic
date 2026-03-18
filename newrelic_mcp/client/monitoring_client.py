@@ -131,10 +131,7 @@ class MonitoringClient:
         """Get recent alert violations"""
         return await self._query_nrql_with_fallback(
             account_id,
-            (
-                f"SELECT * FROM NrAiIncident WHERE state IN ('ACTIVATED', 'CLOSED') "
-                f"SINCE {hours} hours ago LIMIT 50"
-            ),
+            (f"SELECT * FROM NrAiIncident WHERE state IN ('ACTIVATED', 'CLOSED') SINCE {hours} hours ago LIMIT 50"),
             f"SELECT * FROM AlertEvent SINCE {hours} hours ago LIMIT 50",
             "get alert violations",
         )

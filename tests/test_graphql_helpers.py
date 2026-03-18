@@ -1,6 +1,5 @@
 """Tests for GraphQL utility functions."""
 
-
 from newrelic_mcp.utils.graphql_helpers import (
     escape_nrql_string,
     extract_nested_data,
@@ -42,33 +41,13 @@ class TestExtractNrqlResults:
 
 class TestExtractNotificationData:
     def test_extracts_destinations(self):
-        data = {
-            "data": {
-                "actor": {
-                    "account": {
-                        "aiNotifications": {
-                            "destinations": {"entities": [{"id": "1"}]}
-                        }
-                    }
-                }
-            }
-        }
+        data = {"data": {"actor": {"account": {"aiNotifications": {"destinations": {"entities": [{"id": "1"}]}}}}}}
         assert extract_notification_data(data, "destinations") == {"entities": [{"id": "1"}]}
 
 
 class TestExtractWorkflowData:
     def test_extracts_workflows(self):
-        data = {
-            "data": {
-                "actor": {
-                    "account": {
-                        "aiWorkflows": {
-                            "workflows": {"entities": [{"id": "wf1"}]}
-                        }
-                    }
-                }
-            }
-        }
+        data = {"data": {"actor": {"account": {"aiWorkflows": {"workflows": {"entities": [{"id": "wf1"}]}}}}}}
         assert extract_workflow_data(data) == {"entities": [{"id": "wf1"}]}
 
 

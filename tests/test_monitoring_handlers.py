@@ -20,9 +20,7 @@ class TestQueryNRQLHandler:
         mock_client.query_nrql.return_value = {"data": {"result": "ok"}}
         handler = QueryNRQLHandler(mock_client, config)
 
-        result = await handler.handle(
-            {"query": "SELECT count(*) FROM Transaction SINCE 1 hour ago"}, "1234567"
-        )
+        result = await handler.handle({"query": "SELECT count(*) FROM Transaction SINCE 1 hour ago"}, "1234567")
 
         assert len(result) == 1
         assert "NRQL Query Results" in result[0].text

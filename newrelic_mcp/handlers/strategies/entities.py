@@ -20,8 +20,12 @@ class EntitySearchHandler(ToolHandlerStrategy):
         minimal_output = arguments.get("minimal_output", False)
 
         result = await self.client.entities.entity_search(
-            name=name, entity_type=entity_type, domain=domain, tags=tags,
-            limit=limit, minimal_output=minimal_output,
+            name=name,
+            entity_type=entity_type,
+            domain=domain,
+            tags=tags,
+            limit=limit,
+            minimal_output=minimal_output,
         )
 
         format_fn = self._format_entity_minimal if minimal_output else self._format_entity
@@ -204,9 +208,7 @@ class DeleteTagsHandler(ToolHandlerStrategy):
             "deleting tags",
         )
 
-        return self._create_success_response(
-            f"Tag keys deleted from entity {guid}: {', '.join(tag_keys)}"
-        )
+        return self._create_success_response(f"Tag keys deleted from entity {guid}: {', '.join(tag_keys)}")
 
 
 class ReplaceTagsHandler(ToolHandlerStrategy):
@@ -221,9 +223,7 @@ class ReplaceTagsHandler(ToolHandlerStrategy):
             "replacing tags",
         )
 
-        return self._create_success_response(
-            f"All tags replaced on entity {guid}: {self._format_tag_str(tags)}"
-        )
+        return self._create_success_response(f"All tags replaced on entity {guid}: {self._format_tag_str(tags)}")
 
 
 class DeleteTagValuesHandler(ToolHandlerStrategy):

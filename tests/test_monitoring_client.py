@@ -65,9 +65,7 @@ class TestGetErrorMetrics:
 
     async def test_fallback_query(self):
         client = _make_client()
-        client._base.query_nrql = AsyncMock(
-            side_effect=[_nrql_response([]), _nrql_response([{"error_count": 2}])]
-        )
+        client._base.query_nrql = AsyncMock(side_effect=[_nrql_response([]), _nrql_response([{"error_count": 2}])])
         result = await client.get_error_metrics("1234567", "MyApp", 1)
         assert result["error_count"] == 2
 
@@ -103,18 +101,14 @@ class TestGetPerformanceMetrics:
 class TestGetInfrastructureHosts:
     async def test_returns_hosts(self):
         client = _make_client()
-        client._base.query_nrql.return_value = _nrql_response(
-            [{"hostname": "host1", "cpu_percent": 55.0}]
-        )
+        client._base.query_nrql.return_value = _nrql_response([{"hostname": "host1", "cpu_percent": 55.0}])
         hosts = await client.get_infrastructure_hosts("1234567", 1)
         assert len(hosts) == 1
         assert hosts[0]["hostname"] == "host1"
 
     async def test_fallback_on_error(self):
         client = _make_client()
-        client._base.query_nrql = AsyncMock(
-            side_effect=[ValueError("fail"), _nrql_response([{"hosts": ["h1"]}])]
-        )
+        client._base.query_nrql = AsyncMock(side_effect=[ValueError("fail"), _nrql_response([{"hosts": ["h1"]}])])
         hosts = await client.get_infrastructure_hosts("1234567", 1)
         assert len(hosts) == 1
 
@@ -128,9 +122,7 @@ class TestGetInfrastructureHosts:
 class TestGetAlertViolations:
     async def test_returns_violations(self):
         client = _make_client()
-        client._base.query_nrql.return_value = _nrql_response(
-            [{"title": "High CPU", "state": "ACTIVATED"}]
-        )
+        client._base.query_nrql.return_value = _nrql_response([{"title": "High CPU", "state": "ACTIVATED"}])
         violations = await client.get_alert_violations("1234567", 24)
         assert len(violations) == 1
 
@@ -152,9 +144,7 @@ class TestGetAlertViolations:
 class TestGetDeployments:
     async def test_returns_deployments(self):
         client = _make_client()
-        client._base.query_nrql.return_value = _nrql_response(
-            [{"appName": "MyApp", "revision": "abc123"}]
-        )
+        client._base.query_nrql.return_value = _nrql_response([{"appName": "MyApp", "revision": "abc123"}])
         deployments = await client.get_deployments("1234567", "MyApp", 168)
         assert len(deployments) == 1
 

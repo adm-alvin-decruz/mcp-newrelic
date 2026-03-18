@@ -122,9 +122,7 @@ class TestAddTagsHandler:
         mock_client.entities.add_tags_to_entity.return_value = ApiError("not found")
         handler = AddTagsHandler(mock_client, config)
         with pytest.raises(ToolError, match="not found"):
-            await handler.handle(
-                {"guid": "YmFkR3VpZFRlc3Q=", "tags": [{"key": "k", "value": "v"}]}, "1234567"
-            )
+            await handler.handle({"guid": "YmFkR3VpZFRlc3Q=", "tags": [{"key": "k", "value": "v"}]}, "1234567")
 
 
 class TestDeleteTagsHandler:
@@ -225,7 +223,8 @@ class TestReplaceTagsHandler:
         mock_client.entities.replace_tags_on_entity.return_value = {"success": True}
         handler = ReplaceTagsHandler(mock_client, config)
         result = await handler.handle(
-            {"guid": "MTIzNDU2Nzg5MA==", "tags": [{"key": "env", "value": "prod"}, {"key": "team", "value": "sre"}]}, "1234567"
+            {"guid": "MTIzNDU2Nzg5MA==", "tags": [{"key": "env", "value": "prod"}, {"key": "team", "value": "sre"}]},
+            "1234567",
         )
 
         text = result[0].text
@@ -237,9 +236,7 @@ class TestReplaceTagsHandler:
         mock_client.entities.replace_tags_on_entity.return_value = ApiError("permission denied")
         handler = ReplaceTagsHandler(mock_client, config)
         with pytest.raises(ToolError, match="permission denied"):
-            await handler.handle(
-                {"guid": "YmFkR3VpZFRlc3Q=", "tags": [{"key": "k", "value": "v"}]}, "1234567"
-            )
+            await handler.handle({"guid": "YmFkR3VpZFRlc3Q=", "tags": [{"key": "k", "value": "v"}]}, "1234567")
 
 
 class TestDeleteTagValuesHandler:
@@ -258,9 +255,7 @@ class TestDeleteTagValuesHandler:
         mock_client.entities.delete_tag_values.return_value = ApiError("not found")
         handler = DeleteTagValuesHandler(mock_client, config)
         with pytest.raises(ToolError, match="not found"):
-            await handler.handle(
-                {"guid": "YmFkR3VpZFRlc3Q=", "tag_values": [{"key": "k", "value": "v"}]}, "1234567"
-            )
+            await handler.handle({"guid": "YmFkR3VpZFRlc3Q=", "tag_values": [{"key": "k", "value": "v"}]}, "1234567")
 
 
 class TestGetSyntheticResultsHandler:

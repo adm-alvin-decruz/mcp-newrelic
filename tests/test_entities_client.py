@@ -77,11 +77,15 @@ class TestGetEntityTags:
     async def test_returns_entity(self):
         client = _make_client()
         client._base.execute_graphql.return_value = {
-            "data": {"actor": {"entity": {
-                "name": "App1",
-                "entityType": "APM_APPLICATION_ENTITY",
-                "tags": [{"key": "env", "values": ["prod"]}],
-            }}}
+            "data": {
+                "actor": {
+                    "entity": {
+                        "name": "App1",
+                        "entityType": "APM_APPLICATION_ENTITY",
+                        "tags": [{"key": "env", "values": ["prod"]}],
+                    }
+                }
+            }
         }
         entity = await client.get_entity_tags("valid-guid")
         assert entity["name"] == "App1"
@@ -97,9 +101,7 @@ class TestGetEntityTags:
 class TestAddTagsToEntity:
     async def test_success(self):
         client = _make_client()
-        client._base.execute_graphql.return_value = {
-            "data": {"taggingAddTagsToEntity": {"errors": []}}
-        }
+        client._base.execute_graphql.return_value = {"data": {"taggingAddTagsToEntity": {"errors": []}}}
         result = await client.add_tags_to_entity("g1", [{"key": "env", "value": "prod"}])
         assert result["success"] is True
 
@@ -121,9 +123,7 @@ class TestAddTagsToEntity:
 class TestDeleteTagsFromEntity:
     async def test_success(self):
         client = _make_client()
-        client._base.execute_graphql.return_value = {
-            "data": {"taggingDeleteTagFromEntity": {"errors": []}}
-        }
+        client._base.execute_graphql.return_value = {"data": {"taggingDeleteTagFromEntity": {"errors": []}}}
         result = await client.delete_tags_from_entity("g1", ["env"])
         assert result["success"] is True
 
@@ -139,9 +139,7 @@ class TestDeleteTagsFromEntity:
 class TestReplaceTagsOnEntity:
     async def test_success(self):
         client = _make_client()
-        client._base.execute_graphql.return_value = {
-            "data": {"taggingReplaceTagsOnEntity": {"errors": []}}
-        }
+        client._base.execute_graphql.return_value = {"data": {"taggingReplaceTagsOnEntity": {"errors": []}}}
         result = await client.replace_tags_on_entity("g1", [{"key": "env", "value": "staging"}])
         assert result["success"] is True
 
@@ -149,9 +147,7 @@ class TestReplaceTagsOnEntity:
 class TestDeleteTagValues:
     async def test_success(self):
         client = _make_client()
-        client._base.execute_graphql.return_value = {
-            "data": {"taggingDeleteTagValuesFromEntity": {"errors": []}}
-        }
+        client._base.execute_graphql.return_value = {"data": {"taggingDeleteTagValuesFromEntity": {"errors": []}}}
         result = await client.delete_tag_values("g1", [{"key": "env", "value": "old"}])
         assert result["success"] is True
 
@@ -162,9 +158,9 @@ class TestListServiceLevels:
         client._base.paginate_graphql.return_value = PaginatedResult(
             items=[{"guid": "sli1", "name": "Availability SLI", "tags": []}], total_count=1
         )
-        client._base.query_nrql.return_value = _nrql_response([
-            {"entity.guid": "sli1", "entity.name": "Availability SLI", "good": 99, "valid": 100, "bad": 1}
-        ])
+        client._base.query_nrql.return_value = _nrql_response(
+            [{"entity.guid": "sli1", "entity.name": "Availability SLI", "good": 99, "valid": 100, "bad": 1}]
+        )
         slis = await client.list_service_levels("1234567")
         assert len(slis) == 1
         assert slis[0]["sliCompliance"] == 99.0
@@ -203,17 +199,21 @@ class TestGetSyntheticResults:
     async def test_returns_entity_and_results(self):
         client = _make_client()
         client._base.execute_graphql.return_value = {
-            "data": {"actor": {"entity": {
-                "name": "Health Check",
-                "monitorId": "mon-123",
-                "monitorType": "SIMPLE",
-                "period": 5,
-                "monitorSummary": {"status": "SUCCESS", "successRate": 0.99},
-            }}}
+            "data": {
+                "actor": {
+                    "entity": {
+                        "name": "Health Check",
+                        "monitorId": "mon-123",
+                        "monitorType": "SIMPLE",
+                        "period": 5,
+                        "monitorSummary": {"status": "SUCCESS", "successRate": 0.99},
+                    }
+                }
+            }
         }
-        client._base.query_nrql.return_value = _nrql_response([
-            {"result": "SUCCESS", "duration": 150, "locationLabel": "US-East"}
-        ])
+        client._base.query_nrql.return_value = _nrql_response(
+            [{"result": "SUCCESS", "duration": 150, "locationLabel": "US-East"}]
+        )
         result = await client.get_synthetic_results("1234567", "m1-guid", 24)
         assert result["entity"]["name"] == "Health Check"
         assert len(result["results"]) == 1

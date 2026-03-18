@@ -111,9 +111,7 @@ class TestFormatDashboardList:
         assert "caps results at 200" in result
 
     def test_guid_header(self):
-        result = format_dashboard_list(
-            [{"name": "D", "guid": "abc", "createdAt": "2026"}], guid="abc"
-        )
+        result = format_dashboard_list([{"name": "D", "guid": "abc", "createdAt": "2026"}], guid="abc")
         assert "Found dashboard with GUID abc" in result
 
 

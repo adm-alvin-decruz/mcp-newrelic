@@ -51,10 +51,12 @@ class TestCreateDashboard:
     async def test_success(self):
         client = _make_client()
         client._base.execute_graphql.return_value = {
-            "data": {"dashboardCreate": {
-                "entityResult": {"guid": "dash-guid", "name": "New Dashboard"},
-                "errors": None,
-            }}
+            "data": {
+                "dashboardCreate": {
+                    "entityResult": {"guid": "dash-guid", "name": "New Dashboard"},
+                    "errors": None,
+                }
+            }
         }
         result = await client.create_dashboard("1234567", "New Dashboard")
         assert result["guid"] == "dash-guid"
@@ -62,10 +64,12 @@ class TestCreateDashboard:
     async def test_creation_errors(self):
         client = _make_client()
         client._base.execute_graphql.return_value = {
-            "data": {"dashboardCreate": {
-                "entityResult": None,
-                "errors": [{"description": "bad input", "type": "INVALID"}],
-            }}
+            "data": {
+                "dashboardCreate": {
+                    "entityResult": None,
+                    "errors": [{"description": "bad input", "type": "INVALID"}],
+                }
+            }
         }
         result = await client.create_dashboard("1234567", "Bad")
         assert isinstance(result, ApiError)
@@ -80,19 +84,19 @@ class TestCreateDashboard:
 class TestAddWidgetToDashboard:
     async def test_success(self):
         client = _make_client()
-        client._base.execute_graphql = AsyncMock(side_effect=[
-            {"data": {"actor": {"entity": {"pages": [{"guid": "page-guid", "name": "Page 1"}]}}}},
-            {"data": {"dashboardAddWidgetsToPage": {"errors": None}}},
-        ])
+        client._base.execute_graphql = AsyncMock(
+            side_effect=[
+                {"data": {"actor": {"entity": {"pages": [{"guid": "page-guid", "name": "Page 1"}]}}}},
+                {"data": {"dashboardAddWidgetsToPage": {"errors": None}}},
+            ]
+        )
         result = await client.add_widget_to_dashboard("dash-guid", {"title": "Widget"})
         assert result["success"] is True
         assert result["page_guid"] == "page-guid"
 
     async def test_no_pages(self):
         client = _make_client()
-        client._base.execute_graphql.return_value = {
-            "data": {"actor": {"entity": {"pages": []}}}
-        }
+        client._base.execute_graphql.return_value = {"data": {"actor": {"entity": {"pages": []}}}}
         result = await client.add_widget_to_dashboard("dash-guid", {"title": "Widget"})
         assert isinstance(result, ApiError)
 
@@ -101,14 +105,28 @@ class TestGetDashboardWidgets:
     async def test_success(self):
         client = _make_client()
         client._base.execute_graphql.return_value = {
-            "data": {"actor": {"entity": {
-                "name": "Dashboard",
-                "pages": [{
-                    "guid": "pg1",
-                    "name": "Page 1",
-                    "widgets": [{"id": "w1", "title": "Widget 1", "visualization": {"id": "viz.line"}, "configuration": {}, "rawConfiguration": None}],
-                }],
-            }}}
+            "data": {
+                "actor": {
+                    "entity": {
+                        "name": "Dashboard",
+                        "pages": [
+                            {
+                                "guid": "pg1",
+                                "name": "Page 1",
+                                "widgets": [
+                                    {
+                                        "id": "w1",
+                                        "title": "Widget 1",
+                                        "visualization": {"id": "viz.line"},
+                                        "configuration": {},
+                                        "rawConfiguration": None,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                }
+            }
         }
         result = await client.get_dashboard_widgets("dash-guid")
         assert result["dashboard_name"] == "Dashboard"
@@ -125,9 +143,7 @@ class TestGetDashboardWidgets:
 class TestUpdateWidget:
     async def test_success(self):
         client = _make_client()
-        client._base.execute_graphql.return_value = {
-            "data": {"dashboardUpdateWidgetsInPage": {"errors": None}}
-        }
+        client._base.execute_graphql.return_value = {"data": {"dashboardUpdateWidgetsInPage": {"errors": None}}}
         result = await client.update_widget("pg1", "w1", {"title": "Updated"})
         assert result["success"] is True
 
@@ -155,8 +171,20 @@ class TestDeleteWidget:
                                     "name": "Page 1",
                                     "description": "",
                                     "widgets": [
-                                        {"id": "w1", "title": "Delete Me", "layout": None, "visualization": {"id": "viz.line"}, "rawConfiguration": {}},
-                                        {"id": "w2", "title": "Keep Me", "layout": None, "visualization": {"id": "viz.bar"}, "rawConfiguration": {}},
+                                        {
+                                            "id": "w1",
+                                            "title": "Delete Me",
+                                            "layout": None,
+                                            "visualization": {"id": "viz.line"},
+                                            "rawConfiguration": {},
+                                        },
+                                        {
+                                            "id": "w2",
+                                            "title": "Keep Me",
+                                            "layout": None,
+                                            "visualization": {"id": "viz.bar"},
+                                            "rawConfiguration": {},
+                                        },
                                     ],
                                 }
                             ]
@@ -173,11 +201,7 @@ class TestDeleteWidget:
         client = _make_client()
         client._base.execute_graphql.return_value = {
             "data": {
-                "actor": {
-                    "entity": {
-                        "pages": [{"guid": "pg1", "name": "Page 1", "description": "", "widgets": []}]
-                    }
-                }
+                "actor": {"entity": {"pages": [{"guid": "pg1", "name": "Page 1", "description": "", "widgets": []}]}}
             }
         }
         result = await client.delete_widget("pg1", "missing")
@@ -188,9 +212,7 @@ class TestDeleteWidget:
 class TestDeleteDashboard:
     async def test_success(self):
         client = _make_client()
-        client._base.execute_graphql.return_value = {
-            "data": {"dashboardDelete": {"status": "SUCCESS", "errors": None}}
-        }
+        client._base.execute_graphql.return_value = {"data": {"dashboardDelete": {"status": "SUCCESS", "errors": None}}}
         result = await client.delete_dashboard("dash-guid")
         assert result["success"] is True
 

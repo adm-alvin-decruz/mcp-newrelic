@@ -155,9 +155,7 @@ class TestListWorkflowsHandler:
         assert "No workflows" in result[0].text
 
     async def test_workflows_listed(self, mock_client, config):
-        mock_client.alerts.get_workflows.return_value = PaginatedResult(
-            items=[{"name": "Prod Alerts", "id": "wf1"}]
-        )
+        mock_client.alerts.get_workflows.return_value = PaginatedResult(items=[{"name": "Prod Alerts", "id": "wf1"}])
         handler = ListWorkflowsHandler(mock_client, config)
         result = await handler.handle({}, "1234567")
         assert "Prod Alerts" in result[0].text
@@ -168,9 +166,7 @@ class TestCreateWorkflowHandler:
     async def test_success(self, mock_client, config):
         mock_client.alerts.create_workflow.return_value = {"id": "wf-new", "success": True}
         handler = CreateWorkflowHandler(mock_client, config)
-        result = await handler.handle(
-            {"name": "My Workflow", "channel_ids": ["ch1", "ch2"]}, "1234567"
-        )
+        result = await handler.handle({"name": "My Workflow", "channel_ids": ["ch1", "ch2"]}, "1234567")
         assert "wf-new" in result[0].text
         assert "2 notification channel" in result[0].text
 

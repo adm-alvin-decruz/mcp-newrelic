@@ -75,9 +75,7 @@ class TestGetAlertConditions:
 class TestDeleteAlertPolicy:
     async def test_success(self):
         client = _make_client()
-        client._base.execute_graphql.return_value = {
-            "data": {"alertsPolicyDelete": {"id": "p1", "name": "Test"}}
-        }
+        client._base.execute_graphql.return_value = {"data": {"alertsPolicyDelete": {"id": "p1", "name": "Test"}}}
         result = await client.delete_alert_policy("1234567", "p1")
         assert result["success"] is True
 
@@ -108,11 +106,15 @@ class TestCreateNRQLCondition:
     async def test_success(self):
         client = _make_client()
         client._base.execute_graphql.return_value = {
-            "data": {"alertsNrqlConditionStaticCreate": {
-                "id": "c1", "name": "High Errors", "enabled": True,
-                "nrql": {"query": "SELECT count(*) FROM TransactionError"},
-                "terms": [{"operator": "ABOVE", "threshold": 5}],
-            }}
+            "data": {
+                "alertsNrqlConditionStaticCreate": {
+                    "id": "c1",
+                    "name": "High Errors",
+                    "enabled": True,
+                    "nrql": {"query": "SELECT count(*) FROM TransactionError"},
+                    "terms": [{"operator": "ABOVE", "threshold": 5}],
+                }
+            }
         }
         result = await client.create_nrql_condition(
             "1234567", "p1", "High Errors", "SELECT count(*) FROM TransactionError", 5.0
@@ -129,9 +131,7 @@ class TestCreateNRQLCondition:
 class TestDeleteNRQLCondition:
     async def test_success(self):
         client = _make_client()
-        client._base.execute_graphql.return_value = {
-            "data": {"alertsConditionDelete": {"id": "c1"}}
-        }
+        client._base.execute_graphql.return_value = {"data": {"alertsConditionDelete": {"id": "c1"}}}
         result = await client.delete_nrql_condition("1234567", "c1")
         assert result["success"] is True
 
@@ -146,11 +146,19 @@ class TestGetDestinations:
     async def test_success(self):
         client = _make_client()
         client._base.execute_graphql.return_value = {
-            "data": {"actor": {"account": {"aiNotifications": {"destinations": {
-                "entities": [{"id": "d1", "name": "Slack", "type": "SLACK"}],
-                "totalCount": 1,
-                "nextCursor": None,
-            }}}}}
+            "data": {
+                "actor": {
+                    "account": {
+                        "aiNotifications": {
+                            "destinations": {
+                                "entities": [{"id": "d1", "name": "Slack", "type": "SLACK"}],
+                                "totalCount": 1,
+                                "nextCursor": None,
+                            }
+                        }
+                    }
+                }
+            }
         }
         result = await client.get_destinations("1234567")
         assert isinstance(result, PaginatedResult)
@@ -161,11 +169,19 @@ class TestGetWorkflows:
     async def test_success(self):
         client = _make_client()
         client._base.execute_graphql.return_value = {
-            "data": {"actor": {"account": {"aiWorkflows": {"workflows": {
-                "entities": [{"id": "wf1", "name": "Prod Workflow"}],
-                "totalCount": 1,
-                "nextCursor": None,
-            }}}}}
+            "data": {
+                "actor": {
+                    "account": {
+                        "aiWorkflows": {
+                            "workflows": {
+                                "entities": [{"id": "wf1", "name": "Prod Workflow"}],
+                                "totalCount": 1,
+                                "nextCursor": None,
+                            }
+                        }
+                    }
+                }
+            }
         }
         result = await client.get_workflows("1234567")
         assert isinstance(result, PaginatedResult)

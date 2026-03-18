@@ -245,7 +245,9 @@ class AlertsClient:
         }
 
         try:
-            result = await self._base.execute_graphql(mutation, {"accountId": int(account_id), "channel": channel_config})
+            result = await self._base.execute_graphql(
+                mutation, {"accountId": int(account_id), "channel": channel_config}
+            )
 
             create_result = result.get("data", {}).get("aiNotificationsCreateChannel", {})
             error_response = handle_graphql_notification_errors(create_result, "Channel creation")

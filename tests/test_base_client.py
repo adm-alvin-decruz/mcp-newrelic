@@ -140,6 +140,7 @@ class TestDecodeEntityGuid:
     def test_decodes_apm_application_guid(self):
         # Manually construct: 12345|APM|APPLICATION|67890
         import base64
+
         guid = base64.b64encode(b"12345|APM|APPLICATION|67890").decode()
         result = BaseNewRelicClient.decode_entity_guid(guid)
         assert result.account_id == 12345
@@ -153,12 +154,14 @@ class TestDecodeEntityGuid:
 
     def test_too_few_parts_raises(self):
         import base64
+
         guid = base64.b64encode(b"12345|APM").decode()
         with pytest.raises(ValueError, match="expected at least 4 parts"):
             BaseNewRelicClient.decode_entity_guid(guid)
 
     def test_invalid_account_id_raises(self):
         import base64
+
         guid = base64.b64encode(b"notanint|APM|APPLICATION|67890").decode()
         with pytest.raises(ValueError, match="Invalid account ID"):
             BaseNewRelicClient.decode_entity_guid(guid)
@@ -169,12 +172,16 @@ class TestGetEntity:
         client = BaseNewRelicClient(_make_config())
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "data": {"actor": {"entity": {
-                "guid": "abc123",
-                "name": "My App",
-                "domain": "APM",
-                "type": "APPLICATION",
-            }}}
+            "data": {
+                "actor": {
+                    "entity": {
+                        "guid": "abc123",
+                        "name": "My App",
+                        "domain": "APM",
+                        "type": "APPLICATION",
+                    }
+                }
+            }
         }
         mock_response.raise_for_status = MagicMock()
         client._http_client.post = AsyncMock(return_value=mock_response)
@@ -185,6 +192,7 @@ class TestGetEntity:
 
     async def test_entity_not_found_returns_api_error(self):
         from newrelic_mcp.types import ApiError
+
         client = BaseNewRelicClient(_make_config())
         mock_response = MagicMock()
         mock_response.json.return_value = {"data": {"actor": {"entity": None}}}
@@ -201,10 +209,12 @@ class TestExecuteHttpRequestErrorHints:
         client = BaseNewRelicClient(_make_config())
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "errors": [{
-                "message": "query timed out",
-                "extensions": {"errorClass": "TIMEOUT", "errorCode": "NRDB:1109"},
-            }]
+            "errors": [
+                {
+                    "message": "query timed out",
+                    "extensions": {"errorClass": "TIMEOUT", "errorCode": "NRDB:1109"},
+                }
+            ]
         }
         mock_response.raise_for_status = MagicMock()
         client._http_client.post = AsyncMock(return_value=mock_response)
@@ -216,10 +226,12 @@ class TestExecuteHttpRequestErrorHints:
         client = BaseNewRelicClient(_make_config())
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "errors": [{
-                "message": "An error occurred",
-                "extensions": {"errorClass": "SERVER_ERROR", "errorCode": "NRDB:1107005"},
-            }]
+            "errors": [
+                {
+                    "message": "An error occurred",
+                    "extensions": {"errorClass": "SERVER_ERROR", "errorCode": "NRDB:1107005"},
+                }
+            ]
         }
         mock_response.raise_for_status = MagicMock()
         client._http_client.post = AsyncMock(return_value=mock_response)
@@ -245,11 +257,17 @@ class TestPaginateGraphql:
         client = BaseNewRelicClient(_make_config())
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "data": {"actor": {"entitySearch": {"results": {
-                "entities": [{"name": "App1"}, {"name": "App2"}],
-                "nextCursor": None,
-                "totalCount": 2,
-            }}}}
+            "data": {
+                "actor": {
+                    "entitySearch": {
+                        "results": {
+                            "entities": [{"name": "App1"}, {"name": "App2"}],
+                            "nextCursor": None,
+                            "totalCount": 2,
+                        }
+                    }
+                }
+            }
         }
         mock_response.raise_for_status = MagicMock()
         client._http_client.post = AsyncMock(return_value=mock_response)
@@ -269,21 +287,33 @@ class TestPaginateGraphql:
         client = BaseNewRelicClient(_make_config())
         page1 = MagicMock()
         page1.json.return_value = {
-            "data": {"actor": {"entitySearch": {"results": {
-                "entities": [{"name": "App1"}],
-                "nextCursor": "cursor1",
-                "totalCount": 2,
-            }}}}
+            "data": {
+                "actor": {
+                    "entitySearch": {
+                        "results": {
+                            "entities": [{"name": "App1"}],
+                            "nextCursor": "cursor1",
+                            "totalCount": 2,
+                        }
+                    }
+                }
+            }
         }
         page1.raise_for_status = MagicMock()
 
         page2 = MagicMock()
         page2.json.return_value = {
-            "data": {"actor": {"entitySearch": {"results": {
-                "entities": [{"name": "App2"}],
-                "nextCursor": None,
-                "totalCount": 2,
-            }}}}
+            "data": {
+                "actor": {
+                    "entitySearch": {
+                        "results": {
+                            "entities": [{"name": "App2"}],
+                            "nextCursor": None,
+                            "totalCount": 2,
+                        }
+                    }
+                }
+            }
         }
         page2.raise_for_status = MagicMock()
 
@@ -304,11 +334,17 @@ class TestPaginateGraphql:
         client = BaseNewRelicClient(_make_config())
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "data": {"actor": {"entitySearch": {"results": {
-                "entities": [{"name": f"App{i}"} for i in range(10)],
-                "nextCursor": None,
-                "totalCount": 10,
-            }}}}
+            "data": {
+                "actor": {
+                    "entitySearch": {
+                        "results": {
+                            "entities": [{"name": f"App{i}"} for i in range(10)],
+                            "nextCursor": None,
+                            "totalCount": 10,
+                        }
+                    }
+                }
+            }
         }
         mock_response.raise_for_status = MagicMock()
         client._http_client.post = AsyncMock(return_value=mock_response)
