@@ -118,21 +118,18 @@ class ListServiceLevelsHandler(ToolHandlerStrategy):
         for sli in indicators:
             lines.append(f"- **{sli.get('name', 'Unknown')}**")
             lines.append(f"  GUID: {sli.get('guid', '?')}")
-            if sli.get("description"):
-                lines.append(f"  Description: {sli['description']}")
-            objectives = sli.get("objectives", [])
-            for obj in objectives:
-                target = obj.get("target", "?")
-                window = obj.get("timeWindow", {}).get("rolling", {})
-                window_str = f"{window.get('count', '?')} {window.get('unit', '').lower()}" if window else "?"
-                lines.append(f"  Objective: {target}% over {window_str}")
-                if obj.get("name"):
-                    lines.append(f"    Name: {obj['name']}")
-            good_query = (
-                sli.get("resultQueries", {}).get("goodEvents", {}).get("nrql", {}).get("query", "")
-            )
-            if good_query:
-                lines.append(f"  Good events: {good_query[:120]}{'...' if len(good_query) > 120 else ''}")
+            severity = sli.get("alertSeverity")
+            if severity and severity != "NOT_CONFIGURED":
+                lines.append(f"  Alert severity: {severity}")
+            compliance = sli.get("sliCompliance")
+            if compliance is not None:
+                lines.append(f"  Compliance (last 1h): {compliance}%")
+            tags = sli.get("tags", [])
+            sli_tags = {t["key"]: ", ".join(t["values"]) for t in tags}
+            if sli_tags.get("sli.indicator"):
+                lines.append(f"  Indicator: {sli_tags['sli.indicator']}")
+            if sli_tags.get("nr.sli.objectiveTarget"):
+                lines.append(f"  Target: {sli_tags['nr.sli.objectiveTarget']}%")
             lines.append("")
 
         return self._create_success_response("\n".join(lines))

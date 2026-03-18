@@ -147,33 +147,21 @@ class EntitiesClient(BaseNewRelicClient):
 
     async def list_service_levels(self, account_id: str) -> list[dict[str, Any]]:
         """List service level indicators (SLIs) for the account"""
-        # Service levels are entities with type SERVICE_LEVEL — search via entitySearch
+        # Service levels are entities with domain EXT and type SERVICE_LEVEL
         query = """
         {
           actor {
-            entitySearch(query: "accountId = %s AND type = 'SERVICE_LEVEL'") {
+            entitySearch(query: "accountId = %s AND domain = 'EXT' AND type = 'SERVICE_LEVEL'") {
               results {
                 entities {
                   guid
                   name
                   entityType
+                  alertSeverity
                   reporting
                   tags {
                     key
                     values
-                  }
-                  ... on ServiceLevelIndicatorEntityOutline {
-                    objectives {
-                      name
-                      description
-                      target
-                      timeWindow {
-                        rolling {
-                          count
-                          unit
-                        }
-                      }
-                    }
                   }
                 }
               }
@@ -183,14 +171,39 @@ class EntitiesClient(BaseNewRelicClient):
         }
         """ % account_id
 
-        result = await self.execute_graphql(query)
         entities = (
-            result.get("data", {})
+            (await self.execute_graphql(query))
+            .get("data", {})
             .get("actor", {})
             .get("entitySearch", {})
             .get("results", {})
             .get("entities", [])
         )
+
+        # Enrich with SLI compliance data from NRQL
+        if entities:
+            nrql_result = await self.query_nrql(
+                account_id,
+                "SELECT latest(`newrelic.sli.good`) as good, latest(`newrelic.sli.valid`) as valid, "
+                "latest(`newrelic.sli.bad`) as bad "
+                "FROM Metric WHERE entity.type = 'SERVICE_LEVEL' "
+                "FACET entity.guid, entity.name SINCE 1 hour ago LIMIT 50"
+            )
+            sli_rows = (
+                nrql_result.get("data", {})
+                .get("actor", {})
+                .get("account", {})
+                .get("nrql", {})
+                .get("results", [])
+            )
+            sli_by_guid = {r.get("entity.guid"): r for r in sli_rows if r.get("entity.guid")}
+            for e in entities:
+                sli_data = sli_by_guid.get(e.get("guid"), {})
+                if sli_data:
+                    good = sli_data.get("good", 0) or 0
+                    valid = sli_data.get("valid", 0) or 0
+                    e["sliCompliance"] = round((good / valid * 100), 2) if valid > 0 else None
+
         return entities or []
 
     async def list_synthetic_monitors(self, account_id: str) -> list[dict[str, Any]]:
