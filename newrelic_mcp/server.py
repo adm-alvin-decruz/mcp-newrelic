@@ -8,6 +8,7 @@ Supports querying applications, metrics, incidents, dashboards, and managing ale
 import logging
 
 from mcp.server import Server
+from mcp.server.stdio import stdio_server
 
 from .client import NewRelicClient
 from .config import NewRelicConfig
@@ -28,7 +29,7 @@ class NewRelicMCPServer:
 
         if self.config.is_valid():
             self.client = NewRelicClient(self.config)
-            logger.info(f"New Relic client initialized for region: {self.config.region}")
+            logger.info("New Relic client initialized for region: %s", self.config.effective_region)
         else:
             logger.warning("New Relic credentials not provided. Server will run with limited functionality.")
 
@@ -39,11 +40,11 @@ class NewRelicMCPServer:
 
         self.setup_handlers()
 
-    def setup_handlers(self):
+    def setup_handlers(self) -> None:
         """Setup MCP server handlers"""
 
         @self.server.list_resources()
-        async def handle_list_resources():
+        async def handle_list_resources() -> list:
             """List available New Relic resources"""
             if not self.client:
                 return []
@@ -59,12 +60,12 @@ class NewRelicMCPServer:
             return await self.resource_handlers.read_resource(uri)
 
         @self.server.list_tools()
-        async def handle_list_tools():
+        async def handle_list_tools() -> list:
             """List available New Relic tools"""
             return get_all_tools()
 
         @self.server.call_tool()
-        async def handle_call_tool(name: str, arguments: dict):
+        async def handle_call_tool(name: str, arguments: dict) -> list:
             """Handle tool calls"""
             if not self.client:
                 return [
@@ -76,9 +77,11 @@ class NewRelicMCPServer:
 
             return await self.tool_handlers.handle_tool_call(name, arguments)
 
-    async def run(self):
+    async def run(self) -> None:
         """Run the MCP server"""
-        from mcp.server.stdio import stdio_server
-
-        async with stdio_server() as (read_stream, write_stream):
-            await self.server.run(read_stream, write_stream, self.server.create_initialization_options())
+        try:
+            async with stdio_server() as (read_stream, write_stream):
+                await self.server.run(read_stream, write_stream, self.server.create_initialization_options())
+        finally:
+            if self.client:
+                await self.client.aclose()

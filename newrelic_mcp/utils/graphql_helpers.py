@@ -3,49 +3,35 @@
 from typing import Any
 
 
-def extract_nested_data(result: dict[str, Any], path: list[str]) -> dict[str, Any]:
+def extract_nested_data(result: dict[str, Any], path: list[str]) -> Any:
     """Extract nested data from GraphQL result following a path"""
-    current = result
+    current: Any = result
     for key in path:
-        current = current.get(key, {})
+        if isinstance(current, dict):
+            current = current.get(key, {})
+        else:
+            return {}
     return current
 
 
-def extract_alert_data(result: dict[str, Any], endpoint: str) -> dict[str, Any]:
-    """Extract alert-related data from GraphQL result"""
-    return extract_nested_data(result, ["data", "actor", "account", "alerts", endpoint])
+def extract_nrql_results(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract NRQL result rows from a standard actor.account.nrql response"""
+    rows = extract_nested_data(result, ["data", "actor", "account", "nrql", "results"])
+    return rows if isinstance(rows, list) else []
 
 
 def extract_notification_data(result: dict[str, Any], endpoint: str) -> dict[str, Any]:
     """Extract notification-related data from GraphQL result"""
-    return extract_nested_data(result, ["data", "actor", "account", "aiNotifications", endpoint])
+    data: dict[str, Any] = extract_nested_data(result, ["data", "actor", "account", "aiNotifications", endpoint])
+    return data
 
 
 def extract_workflow_data(result: dict[str, Any]) -> dict[str, Any]:
     """Extract workflow data from GraphQL result"""
-    return extract_nested_data(result, ["data", "actor", "account", "aiWorkflows", "workflows"])
+    data: dict[str, Any] = extract_nested_data(result, ["data", "actor", "account", "aiWorkflows", "workflows"])
+    return data
 
 
-def build_actor_query(account_id: str, query_body: str) -> str:
-    """Build standard actor-based GraphQL query"""
-    return f"""
-    query {{
-      actor {{
-        account(id: {account_id}) {{
-          {query_body}
-        }}
-      }}
-    }}
-    """
-
-
-def build_alerts_query(account_id: str, endpoint: str, fields: str) -> str:
-    """Build alerts-specific GraphQL query"""
-    query_body = f"""
-    alerts {{
-      {endpoint} {{
-        {fields}
-      }}
-    }}
-    """
-    return build_actor_query(account_id, query_body)
+def escape_nrql_string(value: str) -> str:
+    """Escape a string value for safe embedding in a NRQL query"""
+    return value.replace("\\", "\\\\").replace("'", "\\'")

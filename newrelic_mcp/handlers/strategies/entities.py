@@ -4,56 +4,64 @@ from typing import Any
 
 from mcp.types import TextContent
 
+from ...validators import InputValidator
 from .base import ToolHandlerStrategy
 
 
 class EntitySearchHandler(ToolHandlerStrategy):
     """Handler for entity search"""
 
-    async def handle(self, arguments: dict[str, Any], account_id: str) -> list[TextContent]:
+    async def handle(self, arguments: dict[str, Any], _account_id: str) -> list[TextContent]:
         name = arguments.get("name")
         entity_type = arguments.get("entity_type")
         domain = arguments.get("domain")
         tags = arguments.get("tags")
 
-        entities = await self.client.entity_search(name=name, entity_type=entity_type, domain=domain, tags=tags)
+        result = await self.client.entities.entity_search(name=name, entity_type=entity_type, domain=domain, tags=tags)
+        return self._handle_list_response(
+            result,
+            error_context="searching entities",
+            empty_message="No entities found matching the search criteria.",
+            item_noun="entities",
+            format_item=self._format_entity,
+        )
 
-        if not entities:
-            return self._create_success_response("No entities found matching the search criteria.")
-
-        lines = [f"Found {len(entities)} entities:\n"]
-        for e in entities:
-            lines.append(f"- **{e.get('name', 'Unknown')}**")
-            lines.append(f"  GUID: {e.get('guid', '?')}")
-            lines.append(f"  Type: {e.get('domain', '?')}/{e.get('type', e.get('entityType', '?'))}")
-            severity = e.get("alertSeverity")
-            if severity:
-                lines.append(f"  Alert severity: {severity}")
-            reporting = e.get("reporting")
-            if reporting is not None:
-                lines.append(f"  Reporting: {reporting}")
-            # Type-specific fields
-            if e.get("language"):
-                lines.append(f"  Language: {e['language']}")
-            if e.get("monitorType"):
-                lines.append(f"  Monitor type: {e['monitorType']}")
-                if e.get("period"):
-                    lines.append(f"  Period: {e['period']}min")
-            tags_list = e.get("tags", [])
-            if tags_list:
-                tag_str = ", ".join([f"{t['key']}={','.join(t['values'])}" for t in tags_list[:5]])
-                lines.append(f"  Tags: {tag_str}")
-            lines.append("")
-
-        return self._create_success_response("\n".join(lines))
+    @staticmethod
+    def _format_entity(e: dict[str, Any]) -> str:
+        parts = [
+            f"- **{e.get('name', 'Unknown')}**",
+            f"  GUID: {e.get('guid', '?')}",
+            f"  Type: {e.get('domain', '?')}/{e.get('type', e.get('entityType', '?'))}",
+        ]
+        severity = e.get("alertSeverity")
+        if severity:
+            parts.append(f"  Alert severity: {severity}")
+        reporting = e.get("reporting")
+        if reporting is not None:
+            parts.append(f"  Reporting: {reporting}")
+        if e.get("language"):
+            parts.append(f"  Language: {e['language']}")
+        if e.get("monitorType"):
+            parts.append(f"  Monitor type: {e['monitorType']}")
+            if e.get("period"):
+                parts.append(f"  Period: {e['period']}min")
+        tags_list = e.get("tags", [])
+        if tags_list:
+            tag_str = ", ".join(f"{t['key']}={','.join(t['values'])}" for t in tags_list[:5])
+            parts.append(f"  Tags: {tag_str}")
+        return "\n".join(parts) + "\n\n"
 
 
 class GetEntityTagsHandler(ToolHandlerStrategy):
     """Handler for getting entity tags"""
 
-    async def handle(self, arguments: dict[str, Any], account_id: str) -> list[TextContent]:
-        guid = arguments["guid"]
-        entity = await self.client.get_entity_tags(guid)
+    async def handle(self, arguments: dict[str, Any], _account_id: str) -> list[TextContent]:
+        guid = self._require_guid(arguments)
+
+        entity = self._unwrap(
+            await self.client.entities.get_entity_tags(guid),
+            f"getting tags for {guid}",
+        )
 
         if not entity:
             return self._create_error_response(f"Entity not found for GUID: {guid}")
@@ -75,109 +83,151 @@ class GetEntityTagsHandler(ToolHandlerStrategy):
 class AddTagsHandler(ToolHandlerStrategy):
     """Handler for adding tags to an entity"""
 
-    async def handle(self, arguments: dict[str, Any], account_id: str) -> list[TextContent]:
-        guid = arguments["guid"]
+    async def handle(self, arguments: dict[str, Any], _account_id: str) -> list[TextContent]:
+        guid = self._require_guid(arguments)
         tags = arguments["tags"]
 
-        result = await self.client.add_tags_to_entity(guid, tags)
+        self._unwrap(
+            await self.client.entities.add_tags_to_entity(guid, tags),
+            "adding tags",
+        )
 
-        if "error" in result:
-            return self._create_error_response(f"adding tags: {result['error']}")
-
-        tag_str = ", ".join([f"{t['key']}={t['value']}" for t in tags])
-        return self._create_success_response(f"Tags added successfully to entity {guid}: {tag_str}")
+        return self._create_success_response(f"Tags added successfully to entity {guid}: {self._format_tag_str(tags)}")
 
 
 class DeleteTagsHandler(ToolHandlerStrategy):
     """Handler for deleting tags from an entity"""
 
-    async def handle(self, arguments: dict[str, Any], account_id: str) -> list[TextContent]:
-        guid = arguments["guid"]
+    async def handle(self, arguments: dict[str, Any], _account_id: str) -> list[TextContent]:
+        guid = self._require_guid(arguments)
         tag_keys = arguments["tag_keys"]
 
-        result = await self.client.delete_tags_from_entity(guid, tag_keys)
-
-        if "error" in result:
-            return self._create_error_response(f"deleting tags: {result['error']}")
+        self._unwrap(
+            await self.client.entities.delete_tags_from_entity(guid, tag_keys),
+            "deleting tags",
+        )
 
         return self._create_success_response(
             f"Tag keys deleted from entity {guid}: {', '.join(tag_keys)}"
         )
 
 
+class ReplaceTagsHandler(ToolHandlerStrategy):
+    """Handler for replacing all tags on an entity"""
+
+    async def handle(self, arguments: dict[str, Any], _account_id: str) -> list[TextContent]:
+        guid = self._require_guid(arguments)
+        tags = arguments["tags"]
+
+        self._unwrap(
+            await self.client.entities.replace_tags_on_entity(guid, tags),
+            "replacing tags",
+        )
+
+        return self._create_success_response(
+            f"All tags replaced on entity {guid}: {self._format_tag_str(tags)}"
+        )
+
+
+class DeleteTagValuesHandler(ToolHandlerStrategy):
+    """Handler for deleting specific tag values from an entity"""
+
+    async def handle(self, arguments: dict[str, Any], _account_id: str) -> list[TextContent]:
+        guid = self._require_guid(arguments)
+        tag_values = arguments["tag_values"]
+
+        self._unwrap(
+            await self.client.entities.delete_tag_values(guid, tag_values),
+            "deleting tag values",
+        )
+
+        return self._create_success_response(
+            f"Tag values deleted from entity {guid}: {self._format_tag_str(tag_values)}"
+        )
+
+
 class ListServiceLevelsHandler(ToolHandlerStrategy):
     """Handler for listing service levels (SLOs/SLIs)"""
 
-    async def handle(self, arguments: dict[str, Any], account_id: str) -> list[TextContent]:
-        indicators = await self.client.list_service_levels(account_id)
+    async def handle(self, _arguments: dict[str, Any], account_id: str) -> list[TextContent]:
+        result = await self.client.entities.list_service_levels(account_id)
+        return self._handle_list_response(
+            result,
+            error_context="listing service levels",
+            empty_message="No service level indicators found.",
+            item_noun="service level indicator(s)",
+            format_item=self._format_sli,
+        )
 
-        if not indicators:
-            return self._create_success_response("No service level indicators found.")
-
-        lines = [f"Found {len(indicators)} service level indicator(s):\n"]
-        for sli in indicators:
-            lines.append(f"- **{sli.get('name', 'Unknown')}**")
-            lines.append(f"  GUID: {sli.get('guid', '?')}")
-            severity = sli.get("alertSeverity")
-            if severity and severity != "NOT_CONFIGURED":
-                lines.append(f"  Alert severity: {severity}")
-            compliance = sli.get("sliCompliance")
-            if compliance is not None:
-                lines.append(f"  Compliance (last 1h): {compliance}%")
-            tags = sli.get("tags", [])
-            sli_tags = {t["key"]: ", ".join(t["values"]) for t in tags}
-            if sli_tags.get("sli.indicator"):
-                lines.append(f"  Indicator: {sli_tags['sli.indicator']}")
-            if sli_tags.get("nr.sli.objectiveTarget"):
-                lines.append(f"  Target: {sli_tags['nr.sli.objectiveTarget']}%")
-            lines.append("")
-
-        return self._create_success_response("\n".join(lines))
+    @staticmethod
+    def _format_sli(sli: dict[str, Any]) -> str:
+        parts = [f"- **{sli.get('name', 'Unknown')}**", f"  GUID: {sli.get('guid', '?')}"]
+        severity = sli.get("alertSeverity")
+        if severity and severity != "NOT_CONFIGURED":
+            parts.append(f"  Alert severity: {severity}")
+        compliance = sli.get("sliCompliance")
+        if compliance is not None:
+            parts.append(f"  Compliance (last 1h): {compliance}%")
+        tags = sli.get("tags", [])
+        sli_tags = {t["key"]: ", ".join(t["values"]) for t in tags}
+        if sli_tags.get("sli.indicator"):
+            parts.append(f"  Indicator: {sli_tags['sli.indicator']}")
+        if sli_tags.get("nr.sli.objectiveTarget"):
+            parts.append(f"  Target: {sli_tags['nr.sli.objectiveTarget']}%")
+        return "\n".join(parts) + "\n\n"
 
 
 class ListSyntheticMonitorsHandler(ToolHandlerStrategy):
     """Handler for listing synthetic monitors"""
 
-    async def handle(self, arguments: dict[str, Any], account_id: str) -> list[TextContent]:
-        monitors = await self.client.list_synthetic_monitors(account_id)
+    async def handle(self, _arguments: dict[str, Any], account_id: str) -> list[TextContent]:
+        result = await self.client.entities.list_synthetic_monitors(account_id)
+        return self._handle_list_response(
+            result,
+            error_context="listing synthetic monitors",
+            empty_message="No synthetic monitors found.",
+            item_noun="synthetic monitor(s)",
+            format_item=self._format_monitor,
+        )
 
-        if not monitors:
-            return self._create_success_response("No synthetic monitors found.")
-
-        lines = [f"Found {len(monitors)} synthetic monitor(s):\n"]
-        for m in monitors:
-            lines.append(f"- **{m.get('name', 'Unknown')}**")
-            lines.append(f"  GUID: {m.get('guid', '?')}")
-            lines.append(f"  Type: {m.get('monitorType', '?')}")
-            period = m.get("period")
-            if period:
-                lines.append(f"  Period: every {period} min")
-            severity = m.get("alertSeverity")
-            if severity:
-                lines.append(f"  Alert severity: {severity}")
-            summary = m.get("monitorSummary") or {}
-            if summary:
-                status = summary.get("status", "?")
-                success_rate = summary.get("successRate")
-                failing = summary.get("locationsFailing", 0)
-                running = summary.get("locationsRunning", 0)
-                lines.append(f"  Status: {status}")
-                if success_rate is not None:
-                    lines.append(f"  Success rate: {success_rate * 100:.1f}%")
-                lines.append(f"  Locations: {running - failing}/{running} passing")
-            lines.append("")
-
-        return self._create_success_response("\n".join(lines))
+    @staticmethod
+    def _format_monitor(m: dict[str, Any]) -> str:
+        parts = [
+            f"- **{m.get('name', 'Unknown')}**",
+            f"  GUID: {m.get('guid', '?')}",
+            f"  Type: {m.get('monitorType', '?')}",
+        ]
+        period = m.get("period")
+        if period:
+            parts.append(f"  Period: every {period} min")
+        severity = m.get("alertSeverity")
+        if severity:
+            parts.append(f"  Alert severity: {severity}")
+        summary = m.get("monitorSummary") or {}
+        if summary:
+            status = summary.get("status", "?")
+            success_rate = summary.get("successRate")
+            failing = summary.get("locationsFailing", 0)
+            running = summary.get("locationsRunning", 0)
+            parts.append(f"  Status: {status}")
+            if success_rate is not None:
+                parts.append(f"  Success rate: {success_rate * 100:.1f}%")
+            parts.append(f"  Locations: {running - failing}/{running} passing")
+        return "\n".join(parts) + "\n\n"
 
 
 class GetSyntheticResultsHandler(ToolHandlerStrategy):
     """Handler for getting synthetic monitor results"""
 
     async def handle(self, arguments: dict[str, Any], account_id: str) -> list[TextContent]:
-        monitor_guid = arguments["monitor_guid"]
-        hours = arguments.get("hours", 24)
+        monitor_guid = self._require_guid(arguments, "monitor_guid")
+        hours = InputValidator.validate_time_range(arguments.get("hours", 24))
 
-        data = await self.client.get_synthetic_results(account_id, monitor_guid, hours)
+        data = self._unwrap(
+            await self.client.entities.get_synthetic_results(account_id, monitor_guid, hours),
+            f"getting synthetic results for {monitor_guid}",
+        )
+
         entity = data.get("entity", {})
         results = data.get("results", [])
 
@@ -206,13 +256,13 @@ class GetSyntheticResultsHandler(ToolHandlerStrategy):
             lines.append("")
             lines.append("Last 10 checks:")
             for r in results[:10]:
-                status = "✅" if r.get("result") == "SUCCESS" else "❌"
+                status = "PASS" if r.get("result") == "SUCCESS" else "FAIL"
                 duration = r.get("duration", "?")
                 location = r.get("locationLabel", "?")
                 error = r.get("error", "")
                 line = f"  {status} {location} ({duration}ms)"
                 if error:
-                    line += f" — {error}"
+                    line += f" -- {error}"
                 lines.append(line)
         else:
             lines.append(f"No check results found in the last {hours}h.")

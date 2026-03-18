@@ -5,9 +5,9 @@ from typing import Any
 
 def format_dashboard_list(
     dashboards: list[dict[str, Any]],
-    search: str = None,
-    guid: str = None,
-    limit_display: int = 50
+    search: str | None = None,
+    guid: str | None = None,
+    limit_display: int = 50,
 ) -> str:
     """Format dashboard list for display with consistent styling"""
     if not dashboards:

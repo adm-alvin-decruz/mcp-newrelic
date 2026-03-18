@@ -13,7 +13,7 @@ A comprehensive Model Context Protocol (MCP) server for New Relic monitoring, ob
 
 ### Dashboard Management
 - **Dashboard Operations**: Create, read, update, and delete dashboards
-- **Widget Management**: Add, update, and remove dashboard widgets with `rawConfiguration` support for dual y-axis, fixed y-axis ranges, legend control, and chart styles
+- **Widget Management**: Add, update, and remove dashboard widgets with rawConfiguration support for dual y-axis, fixed y-axis ranges, legend control, and chart styles
 - **Search & Discovery**: Find dashboards by name or GUID
 - **Visualization Support**: Line charts, bar charts, pie charts, tables, billboards
 
@@ -81,11 +81,9 @@ Example `newrelic-config.json`:
 ```json
 {
   "api_key": "NRAK-your-api-key",
-  "account_id": "your-account-id", 
+  "account_id": "your-account-id",
   "region": "US",
-  "timeout": 30,
-  "rate_limit": 100,
-  "retry_attempts": 3
+  "timeout": 30
 }
 ```
 
@@ -95,8 +93,6 @@ export NEW_RELIC_API_KEY="NRAK-your-api-key"
 export NEW_RELIC_ACCOUNT_ID="your-account-id"
 export NEW_RELIC_REGION="US"  # US or EU
 export NEW_RELIC_TIMEOUT="30"
-export NEW_RELIC_RATE_LIMIT="100"
-export NEW_RELIC_RETRY_ATTEMPTS="3"
 ```
 
 ### Getting Your Credentials
@@ -157,27 +153,36 @@ Configure your MCP client to connect to the server. Example for Claude Desktop:
 - **`search_all_dashboards`**: Advanced dashboard search with local filtering
 - **`get_dashboard_widgets`**: Retrieve all widgets from a dashboard
 - **`create_dashboard`**: Create new dashboards for monitoring
+- **`delete_dashboard`**: Delete a dashboard by GUID
 - **`add_widget_to_dashboard`**: Add custom NRQL-based widgets
 - **`update_widget`**: Update existing dashboard widgets
 - **`delete_widget`**: Remove widgets from dashboards
 
 ### Entity Management
-- **`entity_search`**: Search for any entity by name, type (APPLICATION, HOST, MONITOR), or domain (APM, INFRA, SYNTH, BROWSER). Returns GUIDs, alert severity, tags, and type-specific fields. Capped at 200 results.
+- **`entity_search`**: Search for any entity by name, type (APPLICATION, HOST, MONITOR), or domain (APM, INFRA, SYNTH, BROWSER). Returns GUIDs, alert severity, tags, and type-specific fields.
 - **`get_entity_tags`**: Get all tags for an entity by GUID
 - **`add_tags_to_entity`**: Add or update key-value tags on an entity
+- **`replace_tags_on_entity`**: Replace all tags on an entity (overwrites existing)
 - **`delete_tags_from_entity`**: Remove tag keys from an entity
-- **`list_service_levels`**: List all SLIs/SLOs with alert severity and compliance % (last 1h)
+- **`delete_tag_values`**: Delete specific tag key-value pairs from an entity
+- **`list_service_levels`**: List all SLIs/SLOs with compliance data and objectives
 - **`list_synthetic_monitors`**: List all synthetic monitors with status, success rate, and location health
 - **`get_synthetic_results`**: Get recent pass/fail check results per location for a specific monitor
 
 ### Alert & Notification Management
 - **`create_alert_policy`**: Create alert policies with incident preferences
+- **`update_alert_policy`**: Update an existing alert policy
+- **`delete_alert_policy`**: Delete an alert policy by ID
 - **`create_nrql_condition`**: Create NRQL-based alert conditions
+- **`update_nrql_condition`**: Update an existing NRQL alert condition
+- **`delete_nrql_condition`**: Delete a NRQL alert condition by ID
 - **`create_notification_destination`**: Set up notification endpoints (email, Slack, webhook, PagerDuty)
+- **`delete_notification_destination`**: Delete a notification destination by ID
 - **`create_notification_channel`**: Create notification channels
 - **`create_workflow`**: Connect alerts to notifications with filtering
+- **`delete_workflow`**: Delete a workflow by ID
 - **`list_alert_policies`**: List all alert policies
-- **`list_alert_conditions`**: List alert conditions by policy
+- **`list_alert_conditions`**: List alert conditions with optional filters by policy, name, or NRQL query
 - **`list_notification_destinations`**: List all notification destinations
 - **`list_notification_channels`**: List all notification channels
 - **`list_workflows`**: List all alert workflows
@@ -195,14 +200,15 @@ Access structured data through these MCP resources:
 
 ## Architecture
 
-### Modular Design
+### Design
 - **Strategy Pattern**: Tool handlers using pluggable strategy implementations
-- **Client Layer**: Specialized clients for monitoring, alerts, and dashboards
-- **Configuration Management**: Hierarchical config with validation and security
-- **Utility Modules**: Shared code for error handling, GraphQL operations, and formatting
+- **Composition**: `NewRelicClient` composes specialized sub-clients (`monitoring`, `alerts`, `dashboards`, `entities`) instead of using multiple inheritance
+- **Configuration**: Hierarchical config (CLI > file > env vars) with validation
+- **Error Handling**: Typed `ApiError` dataclass for consistent error propagation
+- **Pagination**: Cursor-based pagination for NerdGraph queries (entity search, alert policies, conditions, service levels, synthetic monitors)
 
 ### Key Components
-- **`NewRelicClient`**: Unified client interface combining all specialized clients
+- **`NewRelicClient`**: Unified client composing all specialized sub-clients
 - **`AlertsClient`**: Alert policies, conditions, and notification management
 - **`DashboardsClient`**: Dashboard and widget operations
 - **`EntitiesClient`**: Entity search, tagging, service levels, and synthetic monitors
@@ -268,11 +274,11 @@ This project maintains high code quality with:
 
 ### Testing
 ```bash
-# Run basic functionality test
-uv run python test_server.py
+# Run all tests
+uv run pytest tests/
 
-# Test with your credentials
-NEW_RELIC_API_KEY=your-key NEW_RELIC_ACCOUNT_ID=your-id uv run python test_server.py
+# Run with verbose output
+uv run pytest tests/ -v
 ```
 
 For detailed development information, see [**DEVELOPMENT.md**](DEVELOPMENT.md).

@@ -7,7 +7,7 @@ Centralized definition of all available tools and their schemas.
 from mcp.types import Tool
 
 
-def get_monitoring_tools():
+def get_monitoring_tools() -> list[Tool]:
     """Get monitoring and performance tools"""
     return [
         Tool(
@@ -120,7 +120,7 @@ def get_monitoring_tools():
     ]
 
 
-def get_dashboard_tools():
+def get_dashboard_tools() -> list[Tool]:
     """Get dashboard management tools"""
     return [
         Tool(
@@ -347,10 +347,21 @@ Note: logarithmic scale is not supported by New Relic for line/area charts.""",
                 "required": ["page_guid", "widget_id"],
             },
         ),
+        Tool(
+            name="delete_dashboard",
+            description="Delete a dashboard by GUID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "dashboard_guid": {"type": "string", "description": "GUID of the dashboard to delete"},
+                },
+                "required": ["dashboard_guid"],
+            },
+        ),
     ]
 
 
-def get_alert_tools():
+def get_alert_tools() -> list[Tool]:
     """Get alert management tools"""
     return [
         Tool(
@@ -498,20 +509,126 @@ def get_alert_tools():
             },
         ),
         Tool(
+            name="update_alert_policy",
+            description="Update an existing alert policy (name and/or incident preference)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "policy_id": {"type": "string", "description": "ID of the alert policy to update"},
+                    "name": {"type": "string", "description": "New name for the policy (optional)"},
+                    "incident_preference": {
+                        "type": "string",
+                        "description": "New incident preference (optional)",
+                        "enum": ["PER_POLICY", "PER_CONDITION", "PER_CONDITION_AND_TARGET"],
+                    },
+                },
+                "required": ["policy_id"],
+            },
+        ),
+        Tool(
+            name="delete_alert_policy",
+            description="Delete an alert policy by ID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "policy_id": {"type": "string", "description": "ID of the alert policy to delete"},
+                },
+                "required": ["policy_id"],
+            },
+        ),
+        Tool(
+            name="update_nrql_condition",
+            description="Update an existing NRQL alert condition",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "condition_id": {"type": "string", "description": "ID of the condition to update"},
+                    "name": {"type": "string", "description": "New name (optional)"},
+                    "description": {"type": "string", "description": "New description (optional)"},
+                    "nrql_query": {"type": "string", "description": "New NRQL query (optional)"},
+                    "enabled": {"type": "boolean", "description": "Enable or disable the condition (optional)"},
+                    "threshold": {"type": "number", "description": "New threshold value (optional)"},
+                    "threshold_operator": {
+                        "type": "string",
+                        "description": "New threshold operator (optional)",
+                        "enum": ["ABOVE", "BELOW", "EQUAL"],
+                    },
+                    "threshold_duration": {
+                        "type": "integer",
+                        "description": "New threshold duration in seconds (optional)",
+                        "minimum": 60,
+                        "maximum": 7200,
+                    },
+                    "priority": {
+                        "type": "string",
+                        "description": "New alert priority (optional)",
+                        "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+                    },
+                },
+                "required": ["condition_id"],
+            },
+        ),
+        Tool(
+            name="delete_nrql_condition",
+            description="Delete a NRQL alert condition by ID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "condition_id": {"type": "string", "description": "ID of the condition to delete"},
+                },
+                "required": ["condition_id"],
+            },
+        ),
+        Tool(
+            name="delete_notification_destination",
+            description="Delete a notification destination by ID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "destination_id": {"type": "string", "description": "ID of the destination to delete"},
+                },
+                "required": ["destination_id"],
+            },
+        ),
+        Tool(
+            name="delete_workflow",
+            description="Delete a workflow by ID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {"type": "string", "description": "ID of the workflow to delete"},
+                    "delete_channels": {
+                        "type": "boolean",
+                        "description": "Also delete associated notification channels (default: true)",
+                        "default": True,
+                    },
+                },
+                "required": ["workflow_id"],
+            },
+        ),
+        Tool(
             name="list_alert_policies",
             description="List all alert policies in the account",
             inputSchema={"type": "object", "properties": {}},
         ),
         Tool(
             name="list_alert_conditions",
-            description="List alert conditions, optionally filtered by policy",
+            description="List alert conditions with optional filters by policy, name, or NRQL query",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "policy_id": {
                         "type": "string",
-                        "description": "Policy ID to filter conditions (optional, shows all if not provided)",
-                    }
+                        "description": "Policy ID to filter conditions (optional)",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Exact condition name to search for (optional)",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search conditions by NRQL query content (partial match, optional)",
+                    },
                 },
             },
         ),
@@ -533,7 +650,7 @@ def get_alert_tools():
     ]
 
 
-def get_entity_tools():
+def get_entity_tools() -> list[Tool]:
     """Get entity search, tagging, service level, and synthetic monitor tools"""
     return [
         Tool(
@@ -609,6 +726,30 @@ def get_entity_tools():
             },
         ),
         Tool(
+            name="replace_tags_on_entity",
+            description="Replace ALL tags on a New Relic entity (overwrites existing tags). Use add_tags_to_entity to append instead.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "guid": {"type": "string", "description": "Entity GUID"},
+                    "tags": {
+                        "type": "array",
+                        "description": "Tags to set as [{key, value}] pairs (replaces all existing tags)",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {"type": "string"},
+                                "value": {"type": "string"},
+                            },
+                            "required": ["key", "value"],
+                        },
+                    },
+                    "account_id": {"type": "string", "description": "Account ID (optional)"},
+                },
+                "required": ["guid", "tags"],
+            },
+        ),
+        Tool(
             name="delete_tags_from_entity",
             description="Delete tag keys (and all their values) from a New Relic entity.",
             inputSchema={
@@ -623,6 +764,30 @@ def get_entity_tools():
                     "account_id": {"type": "string", "description": "Account ID (optional)"},
                 },
                 "required": ["guid", "tag_keys"],
+            },
+        ),
+        Tool(
+            name="delete_tag_values",
+            description="Delete specific tag key-value pairs from an entity (keeps the key if other values remain).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "guid": {"type": "string", "description": "Entity GUID"},
+                    "tag_values": {
+                        "type": "array",
+                        "description": "Tag key-value pairs to delete as [{key, value}]",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {"type": "string"},
+                                "value": {"type": "string"},
+                            },
+                            "required": ["key", "value"],
+                        },
+                    },
+                    "account_id": {"type": "string", "description": "Account ID (optional)"},
+                },
+                "required": ["guid", "tag_values"],
             },
         ),
         Tool(
@@ -677,6 +842,6 @@ def get_entity_tools():
     ]
 
 
-def get_all_tools():
+def get_all_tools() -> list[Tool]:
     """Get all available tools"""
     return get_monitoring_tools() + get_dashboard_tools() + get_alert_tools() + get_entity_tools()

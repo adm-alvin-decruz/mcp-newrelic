@@ -25,8 +25,14 @@ dev = [
     "mypy>=1.16.1",
     "pre-commit>=4.2.0",
     "pylint>=3.3.7",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
     "ruff>=0.12.2",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
@@ -54,30 +60,19 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = false  # Start lenient
+warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false  # Start lenient
-disallow_incomplete_defs = false  # Start lenient  
-check_untyped_defs = false  # Start lenient
-disallow_untyped_decorators = false  # Start lenient
-no_implicit_optional = false  # Start lenient
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
 warn_redundant_casts = true
-warn_unused_ignores = false  # Start lenient
-warn_no_return = false  # Start lenient
+warn_unused_ignores = true
+warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 show_error_codes = true
-
-# Ignore specific modules for now
-[[tool.mypy.overrides]]
-module = [
-    "newrelic_mcp.config.config_manager",
-    "newrelic_mcp.observability", 
-    "newrelic_mcp.handlers.resource_handlers",
-    "newrelic_mcp.handlers.strategies.*",
-    "newrelic_mcp.server"
-]
-ignore_errors = true
 
 [tool.pylint.messages_control]
 disable = [
@@ -105,10 +100,10 @@ lint = [
     "pylint newrelic_mcp/",
 ]
 format = "ruff format ."
-test = "python test_server.py"
+test = "pytest"
 all-checks = [
     "ruff check .",
     "ruff format --check .",
-    "mypy newrelic_mcp/", 
+    "mypy newrelic_mcp/",
     "pylint newrelic_mcp/",
 ]

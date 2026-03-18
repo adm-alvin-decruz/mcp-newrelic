@@ -7,88 +7,72 @@ Handles dashboard creation, widget management, and dashboard queries.
 import logging
 from typing import Any
 
+from ..types import ApiError, PaginatedResult
+from ..utils.error_handling import API_ERRORS, handle_api_error
+from ..utils.graphql_helpers import escape_nrql_string
 from .base_client import BaseNewRelicClient
 
 logger = logging.getLogger(__name__)
 
 
-class DashboardsClient(BaseNewRelicClient):
+class DashboardsClient:
     """Client for New Relic dashboards APIs"""
 
+    def __init__(self, base: BaseNewRelicClient):
+        self._base = base
+
     async def get_dashboards(
-        self, account_id: str, search: str = None, guid: str = None, limit: int = 200
-    ) -> dict[str, Any]:
-        """Get list of dashboards using entity search with search filtering"""
+        self, account_id: str, search: str | None = None, guid: str | None = None, limit: int = 200
+    ) -> PaginatedResult | ApiError:
+        """Get list of dashboards using entity search with cursor-based pagination"""
 
-        # If searching for a specific GUID, modify the query
+        # Build entity search query string with escaped user input
+        acct = int(account_id)
         if guid:
-            search_query = f"accountId = {account_id} AND type = 'DASHBOARD' AND id = '{guid}'"
+            search_query = f"accountId = {acct} AND type = 'DASHBOARD' AND id = '{escape_nrql_string(guid)}'"
         elif search:
-            # Search in dashboard names - New Relic supports name filtering
-            search_query = f"accountId = {account_id} AND type = 'DASHBOARD' AND name LIKE '%{search}%'"
+            search_query = f"accountId = {acct} AND type = 'DASHBOARD' AND name LIKE '%{escape_nrql_string(search)}%'"
         else:
-            search_query = f"accountId = {account_id} AND type = 'DASHBOARD'"
+            search_query = f"accountId = {acct} AND type = 'DASHBOARD'"
 
-        # API effectively caps at 200 dashboards regardless of limit
-        limit = min(limit, 200)
-
-        query = f"""
-        query {{
-          actor {{
-            entitySearch(query: "{search_query}", options: {{limit: {limit}}}) {{
-              results {{
-                entities {{
-                  ... on DashboardEntityOutline {{
+        query = """
+        query($searchQuery: String!, $cursor: String) {
+          actor {
+            entitySearch(query: $searchQuery) {
+              results(cursor: $cursor) {
+                entities {
+                  ... on DashboardEntityOutline {
                     name
                     guid
                     permalink
                     createdAt
                     updatedAt
-                  }}
-                }}
-              }}
-            }}
-          }}
-        }}
+                  }
+                }
+                nextCursor
+              }
+            }
+          }
+        }
         """
 
         try:
-            result = await self.execute_graphql(query)
-
-            logger.debug(f"Dashboard query response: {result}")
-
-            # Check if we got a valid response structure
-            data = result.get("data", {})
-            actor = data.get("actor", {})
-            entity_search = actor.get("entitySearch", {})
-
-            if not entity_search:
-                logger.warning(f"No entity search data returned for account ID {account_id}")
-                return {
-                    "error": f"No entity search data for account {account_id}. Check account ID and permissions.",
-                    "type": "no_account_access",
-                }
-
-            results = entity_search.get("results", {})
-            entities = results.get("entities", [])
-            next_cursor = results.get("nextCursor")
-
-            logger.info(f"Found {len(entities)} dashboards for account {account_id}, nextCursor: {next_cursor}")
-
-            return {"entities": entities, "nextCursor": next_cursor, "hasMore": bool(next_cursor)}
-
-        except Exception as e:
-            logger.error(f"Dashboard query failed: {e}")
-            # Return error info for better debugging
-            return {"error": str(e), "type": "query_failed"}
+            return await self._base.paginate_graphql(
+                query,
+                {"searchQuery": search_query},
+                ["data", "actor", "entitySearch", "results"],
+                "entities",
+                limit=limit,
+            )
+        except API_ERRORS as e:
+            return handle_api_error("get dashboards", e)
 
     async def create_dashboard(
-        self, account_id: str, name: str, description: str = "", widgets: list[dict[str, Any]] = None
-    ) -> dict[str, Any]:
+        self, account_id: str, name: str, description: str = "", widgets: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any] | ApiError:
         """Create a new dashboard"""
         widgets = widgets or []
 
-        # Basic dashboard structure
         dashboard_input = {
             "name": name,
             "description": description,
@@ -112,52 +96,52 @@ class DashboardsClient(BaseNewRelicClient):
         """
 
         try:
-            result = await self.execute_graphql(mutation, {"accountId": int(account_id), "dashboard": dashboard_input})
+            result = await self._base.execute_graphql(
+                mutation, {"accountId": int(account_id), "dashboard": dashboard_input}
+            )
 
-            create_result = result.get("data", {}).get("dashboardCreate", {})
-            if create_result.get("errors"):
-                return {"error": f"Dashboard creation failed: {create_result['errors']}"}
+            extracted = self._base._extract_mutation_result(
+                result, "dashboardCreate", error_message="Dashboard creation failed"
+            )
+            if isinstance(extracted, ApiError):
+                return extracted
 
-            return create_result.get("entityResult", {})
+            entity_result: dict[str, Any] = extracted.get("entityResult", {})
+            return entity_result
 
-        except Exception as e:
-            logger.error(f"Dashboard creation failed: {e}")
-            return {"error": str(e)}
+        except API_ERRORS as e:
+            return handle_api_error("create dashboard", e)
 
-    async def add_widget_to_dashboard(self, dashboard_guid: str, widget_config: dict[str, Any]) -> dict[str, Any]:
+    async def add_widget_to_dashboard(self, dashboard_guid: str, widget_config: dict[str, Any]) -> dict[str, Any] | ApiError:
         """Add a widget to an existing dashboard - requires page GUID, not dashboard GUID"""
 
-        # First, get the dashboard pages to find the page GUID
-        get_pages_query = f"""
-        query {{
-          actor {{
-            entity(guid: "{dashboard_guid}") {{
-              ... on DashboardEntity {{
-                pages {{
+        get_pages_query = """
+        query($guid: EntityGuid!) {
+          actor {
+            entity(guid: $guid) {
+              ... on DashboardEntity {
+                pages {
                   guid
                   name
-                }}
-              }}
-            }}
-          }}
-        }}
+                }
+              }
+            }
+          }
+        }
         """
 
         try:
-            # Get dashboard pages
-            pages_result = await self.execute_graphql(get_pages_query)
+            pages_result = await self._base.execute_graphql(get_pages_query, {"guid": dashboard_guid})
 
             entity = pages_result.get("data", {}).get("actor", {}).get("entity", {})
             pages = entity.get("pages", [])
 
             if not pages:
-                return {"error": "No pages found in dashboard"}
+                return ApiError("No pages found in dashboard")
 
-            # Use the first page GUID (most dashboards have one page)
             page_guid = pages[0]["guid"]
             page_name = pages[0].get("name", "Page 1")
 
-            # Now add widget to the page
             mutation = """
             mutation($guid: EntityGuid!, $widgets: [DashboardWidgetInput!]!) {
               dashboardAddWidgetsToPage(guid: $guid, widgets: $widgets) {
@@ -169,18 +153,19 @@ class DashboardsClient(BaseNewRelicClient):
             }
             """
 
-            # Add widget using the page GUID
-            result = await self.execute_graphql(
+            result = await self._base.execute_graphql(
                 mutation,
                 {
-                    "guid": page_guid,  # Use page GUID, not dashboard GUID
+                    "guid": page_guid,
                     "widgets": [widget_config],
                 },
             )
 
-            add_result = result.get("data", {}).get("dashboardAddWidgetsToPage", {})
-            if add_result.get("errors"):
-                return {"error": f"Widget addition failed: {add_result['errors']}"}
+            add_result = self._base._extract_mutation_result(
+                result, "dashboardAddWidgetsToPage", error_message="Widget addition failed"
+            )
+            if isinstance(add_result, ApiError):
+                return add_result
 
             return {
                 "success": True,
@@ -189,86 +174,85 @@ class DashboardsClient(BaseNewRelicClient):
                 "page_name": page_name,
             }
 
-        except Exception as e:
-            logger.error(f"Widget addition failed: {e}")
-            return {"error": str(e)}
+        except API_ERRORS as e:
+            return handle_api_error("add widget to dashboard", e)
 
-    async def get_dashboard_widgets(self, dashboard_guid: str) -> dict[str, Any]:
+    async def get_dashboard_widgets(self, dashboard_guid: str) -> dict[str, Any] | ApiError:
         """Get all widgets from a dashboard with their details"""
-        query = f"""
-        query {{
-          actor {{
-            entity(guid: "{dashboard_guid}") {{
-              ... on DashboardEntity {{
+        query = """
+        query($guid: EntityGuid!) {
+          actor {
+            entity(guid: $guid) {
+              ... on DashboardEntity {
                 name
-                pages {{
+                pages {
                   guid
                   name
                   description
-                  widgets {{
+                  widgets {
                     id
                     title
-                    visualization {{
+                    visualization {
                       id
-                    }}
+                    }
                     rawConfiguration
-                    configuration {{
-                      area {{
-                        nrqlQueries {{
+                    configuration {
+                      area {
+                        nrqlQueries {
                           accountId
                           query
-                        }}
-                      }}
-                      bar {{
-                        nrqlQueries {{
+                        }
+                      }
+                      bar {
+                        nrqlQueries {
                           accountId
                           query
-                        }}
-                      }}
-                      billboard {{
-                        nrqlQueries {{
+                        }
+                      }
+                      billboard {
+                        nrqlQueries {
                           accountId
                           query
-                        }}
-                      }}
-                      line {{
-                        nrqlQueries {{
+                        }
+                      }
+                      line {
+                        nrqlQueries {
                           accountId
                           query
-                        }}
-                      }}
-                      pie {{
-                        nrqlQueries {{
+                        }
+                      }
+                      pie {
+                        nrqlQueries {
                           accountId
                           query
-                        }}
-                      }}
-                      table {{
-                        nrqlQueries {{
+                        }
+                      }
+                      table {
+                        nrqlQueries {
                           accountId
                           query
-                        }}
-                      }}
-                    }}
-                  }}
-                }}
-              }}
-            }}
-          }}
-        }}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
         """
 
         try:
-            result = await self.execute_graphql(query)
+            result = await self._base.execute_graphql(query, {"guid": dashboard_guid})
 
             entity = result.get("data", {}).get("actor", {}).get("entity", {})
             if not entity:
-                return {"error": "Dashboard not found"}
+                return ApiError("Dashboard not found")
 
             dashboard_name = entity.get("name", "Unknown")
             pages = entity.get("pages", [])
 
-            widgets_info = {
+            widgets_info: dict[str, Any] = {
                 "dashboard_name": dashboard_name,
                 "dashboard_guid": dashboard_guid,
                 "pages": [],
@@ -276,7 +260,7 @@ class DashboardsClient(BaseNewRelicClient):
             }
 
             for page in pages or []:
-                page_info = {
+                page_info: dict[str, Any] = {
                     "page_guid": page.get("guid"),
                     "page_name": page.get("name", "Unnamed Page"),
                     "widgets": [],
@@ -302,14 +286,13 @@ class DashboardsClient(BaseNewRelicClient):
 
             return widgets_info
 
-        except Exception as e:
-            logger.error(f"Failed to get dashboard widgets: {e}")
-            return {"error": str(e)}
+        except API_ERRORS as e:
+            return handle_api_error("get dashboard widgets", e)
 
-    async def update_widget(self, page_guid: str, widget_id: str, widget_config: dict[str, Any]) -> dict[str, Any]:
+    async def update_widget(self, page_guid: str, widget_id: str, widget_config: dict[str, Any]) -> dict[str, Any] | ApiError:
         """Update an existing widget on a dashboard page"""
         mutation = """
-        mutation($guid: EntityGuid!, $widgets: [DashboardWidgetUpdateInput!]!) {
+        mutation($guid: EntityGuid!, $widgets: [DashboardUpdateWidgetInput!]!) {
           dashboardUpdateWidgetsInPage(guid: $guid, widgets: $widgets) {
             errors {
               description
@@ -319,27 +302,122 @@ class DashboardsClient(BaseNewRelicClient):
         }
         """
 
-        # Create update input with widget ID
         widget_update_input = {"id": widget_id, **widget_config}
 
         try:
-            result = await self.execute_graphql(mutation, {"guid": page_guid, "widgets": [widget_update_input]})
+            result = await self._base.execute_graphql(mutation, {"guid": page_guid, "widgets": [widget_update_input]})
 
-            update_result = result.get("data", {}).get("dashboardUpdateWidgetsInPage", {})
-            if update_result.get("errors"):
-                return {"error": f"Widget update failed: {update_result['errors']}"}
+            extracted = self._base._extract_mutation_result(
+                result, "dashboardUpdateWidgetsInPage", error_message="Widget update failed"
+            )
+            if isinstance(extracted, ApiError):
+                return extracted
 
             return {"success": True, "message": f"Widget '{widget_id}' updated successfully", "widget_id": widget_id}
 
-        except Exception as e:
-            logger.error(f"Widget update failed: {e}")
-            return {"error": str(e)}
+        except API_ERRORS as e:
+            return handle_api_error("update widget", e)
 
-    async def delete_widget(self, page_guid: str, widget_id: str) -> dict[str, Any]:
-        """Delete a widget from a dashboard page"""
+    async def delete_widget(self, page_guid: str, widget_id: str) -> dict[str, Any] | ApiError:
+        """Delete a widget by updating the page with all widgets except the target."""
+        # Fetch current page widgets
+        fetch_query = """
+        query($guid: EntityGuid!) {
+          actor {
+            entity(guid: $guid) {
+              ... on DashboardEntity {
+                pages {
+                  guid
+                  name
+                  description
+                  widgets {
+                    id
+                    title
+                    layout { column row width height }
+                    visualization { id }
+                    rawConfiguration
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+
+        try:
+            result = await self._base.execute_graphql(fetch_query, {"guid": page_guid})
+            entity = result.get("data", {}).get("actor", {}).get("entity", {})
+            if not entity:
+                return ApiError(f"Page '{page_guid}' not found")
+
+            # Find the page containing this widget
+            target_page = None
+            for page in entity.get("pages", []):
+                if page.get("guid") == page_guid:
+                    target_page = page
+                    break
+
+            if not target_page:
+                return ApiError(f"Page with GUID '{page_guid}' not found in dashboard")
+
+            # Filter out the target widget and rebuild the list
+            remaining_widgets = []
+            found = False
+            for w in target_page.get("widgets", []):
+                if str(w.get("id")) == str(widget_id):
+                    found = True
+                    continue
+                widget_input: dict[str, Any] = {
+                    "id": w["id"],
+                    "title": w.get("title", ""),
+                    "visualization": w.get("visualization", {"id": "viz.line"}),
+                    "rawConfiguration": w.get("rawConfiguration", {}),
+                }
+                if w.get("layout"):
+                    widget_input["layout"] = w["layout"]
+                remaining_widgets.append(widget_input)
+
+            if not found:
+                return ApiError(f"Widget '{widget_id}' not found on page '{page_guid}'")
+
+            if not remaining_widgets:
+                return ApiError(
+                    "Cannot delete the last widget on a page. "
+                    "Use delete_dashboard to remove the entire dashboard instead."
+                )
+
+            # Update the page with remaining widgets
+            update_mutation = """
+            mutation($guid: EntityGuid!, $widgets: [DashboardUpdateWidgetInput!]!) {
+              dashboardUpdateWidgetsInPage(guid: $guid, widgets: $widgets) {
+                errors {
+                  description
+                  type
+                }
+              }
+            }
+            """
+            update_result = await self._base.execute_graphql(
+                update_mutation, {"guid": page_guid, "widgets": remaining_widgets}
+            )
+
+            extracted = self._base._extract_mutation_result(
+                update_result, "dashboardUpdateWidgetsInPage", error_message="Widget deletion failed"
+            )
+            if isinstance(extracted, ApiError):
+                return extracted
+
+            return {"success": True, "message": f"Widget '{widget_id}' deleted successfully", "widget_id": widget_id}
+
+        except API_ERRORS as e:
+            return handle_api_error("delete widget", e)
+
+    async def delete_dashboard(self, dashboard_guid: str) -> dict[str, Any] | ApiError:
+        """Delete a dashboard by GUID"""
         mutation = """
-        mutation($guid: EntityGuid!, $widgetIds: [String!]!) {
-          dashboardDeleteWidgetsFromPage(guid: $guid, widgetIds: $widgetIds) {
+        mutation($guid: EntityGuid!) {
+          dashboardDelete(guid: $guid) {
+            status
             errors {
               description
               type
@@ -349,14 +427,20 @@ class DashboardsClient(BaseNewRelicClient):
         """
 
         try:
-            result = await self.execute_graphql(mutation, {"guid": page_guid, "widgetIds": [widget_id]})
+            result = await self._base.execute_graphql(mutation, {"guid": dashboard_guid})
 
-            delete_result = result.get("data", {}).get("dashboardDeleteWidgetsFromPage", {})
-            if delete_result.get("errors"):
-                return {"error": f"Widget deletion failed: {delete_result['errors']}"}
+            delete_result = self._base._extract_mutation_result(
+                result, "dashboardDelete", error_message="Dashboard deletion failed"
+            )
+            if isinstance(delete_result, ApiError):
+                return delete_result
 
-            return {"success": True, "message": f"Widget '{widget_id}' deleted successfully", "widget_id": widget_id}
+            status = delete_result.get("status")
+            return {
+                "success": True,
+                "message": f"Dashboard '{dashboard_guid}' deleted successfully",
+                "status": status,
+            }
 
-        except Exception as e:
-            logger.error(f"Widget deletion failed: {e}")
-            return {"error": str(e)}
+        except API_ERRORS as e:
+            return handle_api_error("delete dashboard", e)

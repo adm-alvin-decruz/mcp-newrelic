@@ -4,6 +4,7 @@ from typing import Any
 
 from mcp.types import TextContent
 
+from ...types import ApiError
 from ...utils.dashboard_formatters import (
     build_raw_nrql_queries,
     build_widget_configuration,
@@ -21,35 +22,27 @@ class GetDashboardsHandler(ToolHandlerStrategy):
         guid = arguments.get("guid")
         limit = arguments.get("limit", 200)
 
-        result = await self.client.get_dashboards(account_id, search=search, guid=guid, limit=limit)
+        result = await self.client.dashboards.get_dashboards(account_id, search=search, guid=guid, limit=limit)
 
-        if "error" in result:
-            return self._handle_dashboard_error(result, account_id)
+        if isinstance(result, ApiError):
+            return self._handle_dashboard_error(result)
 
-        dashboards = result.get("entities", [])
-        return self._format_dashboard_list(dashboards, search, guid)
+        return self._format_dashboard_list(result.items, search, guid)
 
-    def _handle_dashboard_error(self, result: dict[str, Any], _account_id: str) -> list[TextContent]:
+    def _handle_dashboard_error(self, error: ApiError) -> list[TextContent]:
         """Handle dashboard retrieval errors"""
-        error_info = result
-        error_type = error_info.get("type", "unknown")
-
-        if error_type == "no_account_access":
-            error_msg = (
-                f"**Account Access Issue**\n\n"
-                f"{error_info['error']}\n\n"
-                f"**Possible causes:**\n"
-                f"1. **Wrong Account ID** - Double-check your New Relic account ID\n"
-                f"2. **API Key Permissions** - Your API key may not have access to this account\n"
-                f"3. **User API Key Required** - Ensure you're using a User API key, not an Ingest key\n"
-                f"4. **Account Region Mismatch** - Check if your account is in EU region (currently using {self.config.region})"
-            )
-        else:
-            error_msg = f"Error retrieving dashboards: {error_info['error']}"
-
+        error_msg = (
+            f"**Account Access Issue**\n\n"
+            f"{error.message}\n\n"
+            f"**Possible causes:**\n"
+            f"1. **Wrong Account ID** - Double-check your New Relic account ID\n"
+            f"2. **API Key Permissions** - Your API key may not have access to this account\n"
+            f"3. **User API Key Required** - Ensure you're using a User API key, not an Ingest key\n"
+            f"4. **Account Region Mismatch** - Check if your account is in EU region (currently using {self.config.region})"
+        )
         return [TextContent(type="text", text=error_msg)]
 
-    def _format_dashboard_list(self, dashboards: list[dict], search: str, guid: str) -> list[TextContent]:
+    def _format_dashboard_list(self, dashboards: list[dict], search: str | None, guid: str | None) -> list[TextContent]:
         """Format dashboard list for display"""
         dashboard_text = format_dashboard_list(dashboards, search, guid, limit_display=50)
         return self._create_success_response(dashboard_text)
@@ -62,10 +55,10 @@ class CreateDashboardHandler(ToolHandlerStrategy):
         dashboard_name = arguments["name"]
         description = arguments.get("description", "")
 
-        result = await self.client.create_dashboard(account_id, dashboard_name, description)
-
-        if "error" in result:
-            return self._create_error_response(f"creating dashboard '{dashboard_name}': {result['error']}")
+        result = self._unwrap(
+            await self.client.dashboards.create_dashboard(account_id, dashboard_name, description),
+            f"creating dashboard '{dashboard_name}'",
+        )
 
         guid = result.get("guid", "Unknown")
         permalink = result.get("permalink", "")
@@ -83,7 +76,7 @@ class AddWidgetHandler(ToolHandlerStrategy):
     """Handler for adding widgets to dashboards"""
 
     async def handle(self, arguments: dict[str, Any], account_id: str) -> list[TextContent]:
-        dashboard_guid = arguments["dashboard_guid"]
+        dashboard_guid = self._require_guid(arguments, "dashboard_guid")
         widget_title = arguments["widget_title"]
         widget_query = arguments["widget_query"]
         widget_type = arguments.get("widget_type", "line")
@@ -101,10 +94,10 @@ class AddWidgetHandler(ToolHandlerStrategy):
                 raw_configuration = {**raw_configuration, "nrqlQueries": build_raw_nrql_queries(account_id, widget_query)}
             widget_config["rawConfiguration"] = raw_configuration
 
-        result = await self.client.add_widget_to_dashboard(dashboard_guid, widget_config)
-
-        if "error" in result:
-            return self._create_error_response(f"adding widget to dashboard: {result['error']}")
+        self._unwrap(
+            await self.client.dashboards.add_widget_to_dashboard(dashboard_guid, widget_config),
+            "adding widget to dashboard",
+        )
 
         suffix = " (with custom rawConfiguration)" if raw_configuration else ""
         return self._create_success_response(
@@ -119,16 +112,12 @@ class SearchDashboardsHandler(ToolHandlerStrategy):
         search = arguments.get("search")
         guid = arguments.get("guid")
 
-        # Use get_dashboards method with search functionality
-        result = await self.client.get_dashboards(account_id, search=search, guid=guid, limit=200)
+        result = self._unwrap(
+            await self.client.dashboards.get_dashboards(account_id, search=search, guid=guid, limit=200),
+            "searching dashboards",
+        )
 
-        if "error" in result:
-            return self._create_error_response(f"searching dashboards: {result['error']}")
-
-        dashboards = result.get("entities", [])
-
-        # Format and return dashboard list
-        dashboard_text = format_dashboard_list(dashboards, search, guid, limit_display=25)
+        dashboard_text = format_dashboard_list(result.items, search, guid, limit_display=25)
         return self._create_success_response(dashboard_text)
 
 
@@ -136,11 +125,12 @@ class GetWidgetsHandler(ToolHandlerStrategy):
     """Handler for getting dashboard widgets"""
 
     async def handle(self, arguments: dict[str, Any], _account_id: str) -> list[TextContent]:
-        dashboard_guid = arguments["dashboard_guid"]
-        result = await self.client.get_dashboard_widgets(dashboard_guid)
+        dashboard_guid = self._require_guid(arguments, "dashboard_guid")
 
-        if "error" in result:
-            return self._create_error_response(f"getting dashboard widgets: {result['error']}")
+        result = self._unwrap(
+            await self.client.dashboards.get_dashboard_widgets(dashboard_guid),
+            "getting dashboard widgets",
+        )
 
         pages = result.get("pages", [])
         dashboard_name = result.get("dashboard_name", "Unknown")
@@ -199,7 +189,7 @@ class UpdateWidgetHandler(ToolHandlerStrategy):
     """Handler for updating widgets"""
 
     async def handle(self, arguments: dict[str, Any], account_id: str) -> list[TextContent]:
-        page_guid = arguments["page_guid"]
+        page_guid = self._require_guid(arguments, "page_guid")
         widget_id = arguments["widget_id"]
         widget_title = arguments.get("widget_title")
         widget_query = arguments.get("widget_query")
@@ -207,7 +197,7 @@ class UpdateWidgetHandler(ToolHandlerStrategy):
         raw_configuration = arguments.get("raw_configuration")
 
         # Build widget update configuration
-        widget_config = {"id": widget_id}
+        widget_config: dict[str, Any] = {}
 
         if widget_title:
             widget_config["title"] = widget_title
@@ -215,18 +205,21 @@ class UpdateWidgetHandler(ToolHandlerStrategy):
         if widget_query:
             widget_config["configuration"] = build_widget_configuration(widget_type, account_id, widget_query)
             widget_config["visualization"] = {"id": f"viz.{widget_type}"}
+            # NerdGraph update requires rawConfiguration alongside typed configuration
+            if raw_configuration is None:
+                raw_configuration = {}
+            if "nrqlQueries" not in raw_configuration:
+                raw_configuration = {**raw_configuration, "nrqlQueries": build_raw_nrql_queries(account_id, widget_query)}
 
         if raw_configuration is not None:
-            if "nrqlQueries" not in raw_configuration and widget_query:
-                raw_configuration = {**raw_configuration, "nrqlQueries": build_raw_nrql_queries(account_id, widget_query)}
             widget_config["rawConfiguration"] = raw_configuration
             if "visualization" not in widget_config:
                 widget_config["visualization"] = {"id": f"viz.{widget_type}"}
 
-        result = await self.client.update_widget(page_guid, widget_id, widget_config)
-
-        if "error" in result:
-            return self._create_error_response(f"updating widget: {result['error']}")
+        self._unwrap(
+            await self.client.dashboards.update_widget(page_guid, widget_id, widget_config),
+            "updating widget",
+        )
 
         suffix = " (with custom rawConfiguration)" if raw_configuration else ""
         return self._create_success_response(f"Widget {widget_id} updated successfully{suffix}!")
@@ -236,12 +229,26 @@ class DeleteWidgetHandler(ToolHandlerStrategy):
     """Handler for deleting widgets"""
 
     async def handle(self, arguments: dict[str, Any], _account_id: str) -> list[TextContent]:
-        page_guid = arguments["page_guid"]
+        page_guid = self._require_guid(arguments, "page_guid")
         widget_id = arguments["widget_id"]
 
-        result = await self.client.delete_widget(page_guid, widget_id)
-
-        if "error" in result:
-            return self._create_error_response(f"deleting widget: {result['error']}")
+        self._unwrap(
+            await self.client.dashboards.delete_widget(page_guid, widget_id),
+            "deleting widget",
+        )
 
         return self._create_success_response(f"Widget {widget_id} deleted successfully!")
+
+
+class DeleteDashboardHandler(ToolHandlerStrategy):
+    """Handler for deleting dashboards"""
+
+    async def handle(self, arguments: dict[str, Any], _account_id: str) -> list[TextContent]:
+        dashboard_guid = self._require_guid(arguments, "dashboard_guid")
+
+        self._unwrap(
+            await self.client.dashboards.delete_dashboard(dashboard_guid),
+            "deleting dashboard",
+        )
+
+        return self._create_success_response(f"Dashboard '{dashboard_guid}' deleted successfully.")

@@ -7,154 +7,155 @@ Handles applications, performance metrics, error tracking, and infrastructure mo
 import logging
 from typing import Any
 
+from ..types import ApiError
+from ..utils.error_handling import API_ERRORS, handle_api_error
+from ..utils.graphql_helpers import escape_nrql_string, extract_nrql_results
 from .base_client import BaseNewRelicClient
 
 logger = logging.getLogger(__name__)
 
 
-class MonitoringClient(BaseNewRelicClient):
+class MonitoringClient:
     """Client for New Relic monitoring APIs"""
 
-    async def get_applications(self, account_id: str) -> list[dict[str, Any]]:
+    def __init__(self, base: BaseNewRelicClient):
+        self._base = base
+
+    async def _query_nrql_with_fallback(
+        self, account_id: str, primary: str, fallback: str, operation: str
+    ) -> list[dict[str, Any]] | ApiError:
+        """Try a NRQL query; on failure, try a fallback query."""
+        try:
+            result = await self._base.query_nrql(account_id, primary)
+            return extract_nrql_results(result) or []
+        except API_ERRORS as e:
+            logger.warning("%s primary query failed, trying fallback: %s", operation, e)
+            try:
+                result = await self._base.query_nrql(account_id, fallback)
+                return extract_nrql_results(result) or []
+            except API_ERRORS as e2:
+                return handle_api_error(operation, e2)
+
+    async def get_applications(self, account_id: str) -> list[dict[str, Any]] | ApiError:
         """Get list of applications"""
         query = "SELECT uniques(appName) as 'applications' FROM Transaction SINCE 1 day ago LIMIT 100"
-        result = await self.query_nrql(account_id, query)
+        try:
+            result = await self._base.query_nrql(account_id, query)
+            nrql_results = extract_nrql_results(result)
+            if not nrql_results:
+                logger.warning("No applications found in NRQL results")
+                return []
 
-        nrql_results = result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-        if not nrql_results:
-            logger.warning("No applications found in NRQL results")
-            return []
+            apps = []
+            for item in nrql_results:
+                if "applications" in item and item["applications"]:
+                    for app_name in item["applications"]:
+                        apps.append({"name": app_name, "appName": app_name})
 
-        # Extract application names from the results
-        apps = []
-        for item in nrql_results:
-            if "applications" in item and item["applications"]:
-                for app_name in item["applications"]:
-                    apps.append({"name": app_name, "appName": app_name})
+            return apps
+        except API_ERRORS as e:
+            return handle_api_error("get applications", e)
 
-        return apps
-
-    async def get_recent_incidents(self, account_id: str, hours: int = 24) -> list[dict[str, Any]]:
+    async def get_recent_incidents(self, account_id: str, hours: int = 24) -> list[dict[str, Any]] | ApiError:
         """Get recent incidents"""
-        # Use a more general query for incidents/alerts
-        query = f"SELECT * FROM NrAiIncident SINCE {hours} hours ago LIMIT 50"
-        try:
-            result = await self.query_nrql(account_id, query)
-            nrql_results = result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-            return nrql_results if nrql_results else []
-        except Exception as e:
-            logger.warning(f"Incident query failed, trying alternative: {e}")
-            # Fallback to alert violations
-            query = f"SELECT * FROM Alert SINCE {hours} hours ago LIMIT 50"
-            try:
-                result = await self.query_nrql(account_id, query)
-                return result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-            except Exception:
-                logger.warning("Both incident queries failed, returning empty list")
-                return []
+        return await self._query_nrql_with_fallback(
+            account_id,
+            f"SELECT * FROM NrAiIncident SINCE {hours} hours ago LIMIT 50",
+            f"SELECT * FROM Alert SINCE {hours} hours ago LIMIT 50",
+            "get incidents",
+        )
 
-    async def get_error_metrics(self, account_id: str, app_name: str, hours: int = 1) -> dict[str, Any]:
+    async def get_error_metrics(self, account_id: str, app_name: str, hours: int = 1) -> dict[str, Any] | ApiError:
         """Get error metrics for an application"""
-        query = f"SELECT count(*) as error_count, average(duration) as avg_duration FROM TransactionError WHERE appName = '{app_name}' SINCE {hours} hours ago"
+        safe_name = escape_nrql_string(app_name)
+        query = (
+            f"SELECT count(*) as error_count, average(duration) as avg_duration "
+            f"FROM TransactionError WHERE appName = '{safe_name}' SINCE {hours} hours ago"
+        )
         try:
-            result = await self.query_nrql(account_id, query)
-            nrql_results = result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
+            result = await self._base.query_nrql(account_id, query)
+            nrql_results = extract_nrql_results(result)
 
             if nrql_results:
                 return nrql_results[0]
-            else:
-                # Fallback query
-                query = f"SELECT count(*) as error_count FROM Transaction WHERE appName = '{app_name}' AND error IS TRUE SINCE {hours} hours ago"
-                result = await self.query_nrql(account_id, query)
-                nrql_results = (
-                    result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-                )
-                return nrql_results[0] if nrql_results else {"error_count": 0, "avg_duration": None}
 
-        except Exception as e:
-            logger.error(f"Error metrics query failed: {e}")
-            return {"error_count": "Unknown", "avg_duration": "Unknown", "error": str(e)}
+            # Fallback query
+            query = (
+                f"SELECT count(*) as error_count FROM Transaction "
+                f"WHERE appName = '{safe_name}' AND error IS TRUE SINCE {hours} hours ago"
+            )
+            result = await self._base.query_nrql(account_id, query)
+            nrql_results = extract_nrql_results(result)
+            return nrql_results[0] if nrql_results else {"error_count": 0, "avg_duration": None}
 
-    async def get_performance_metrics(self, account_id: str, app_name: str, hours: int = 1) -> dict[str, Any]:
+        except API_ERRORS as e:
+            return handle_api_error("get error metrics", e)
+
+    async def get_performance_metrics(
+        self, account_id: str, app_name: str, hours: int = 1
+    ) -> dict[str, Any] | ApiError:
         """Get performance metrics for an application"""
-        query = f"SELECT average(duration) as avg_duration, percentile(duration, 95) as p95_duration, rate(count(*), 1 minute) as throughput FROM Transaction WHERE appName = '{app_name}' SINCE {hours} hours ago"
+        safe_name = escape_nrql_string(app_name)
+        query = (
+            f"SELECT average(duration) as avg_duration, percentile(duration, 95) as p95_duration, "
+            f"rate(count(*), 1 minute) as throughput FROM Transaction "
+            f"WHERE appName = '{safe_name}' SINCE {hours} hours ago"
+        )
         try:
-            result = await self.query_nrql(account_id, query)
-            nrql_results = result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
+            result = await self._base.query_nrql(account_id, query)
+            nrql_results = extract_nrql_results(result)
 
             if nrql_results:
                 return nrql_results[0]
-            else:
-                logger.warning(f"No performance data found for app: {app_name}")
-                return {"avg_duration": "No data", "p95_duration": "No data", "throughput": "No data"}
 
-        except Exception as e:
-            logger.error(f"Performance metrics query failed: {e}")
-            return {"avg_duration": "Unknown", "p95_duration": "Unknown", "throughput": "Unknown", "error": str(e)}
+            logger.warning("No performance data found for app: %s", app_name)
+            return {"avg_duration": "No data", "p95_duration": "No data", "throughput": "No data"}
 
-    async def get_infrastructure_hosts(self, account_id: str, hours: int = 1) -> list[dict[str, Any]]:
+        except API_ERRORS as e:
+            return handle_api_error("get performance metrics", e)
+
+    async def get_infrastructure_hosts(self, account_id: str, hours: int = 1) -> list[dict[str, Any]] | ApiError:
         """Get infrastructure hosts and their metrics"""
-        query = f"SELECT latest(cpuPercent) as cpu_percent, latest(memoryUsedPercent) as memory_percent, latest(diskUsedPercent) as disk_percent FROM SystemSample FACET hostname SINCE {hours} hours ago LIMIT 50"
-        try:
-            result = await self.query_nrql(account_id, query)
-            nrql_results = result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-            return nrql_results if nrql_results else []
-        except Exception as e:
-            logger.error(f"Infrastructure hosts query failed: {e}")
-            # Fallback to simpler query
-            try:
-                query = f"SELECT uniques(hostname) as hosts FROM SystemSample SINCE {hours} hours ago LIMIT 50"
-                result = await self.query_nrql(account_id, query)
-                nrql_results = (
-                    result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-                )
-                return nrql_results if nrql_results else []
-            except Exception:
-                logger.warning("Infrastructure hosts query failed completely")
-                return []
+        return await self._query_nrql_with_fallback(
+            account_id,
+            (
+                f"SELECT latest(cpuPercent) as cpu_percent, latest(memoryUsedPercent) as memory_percent, "
+                f"latest(diskUsedPercent) as disk_percent FROM SystemSample "
+                f"FACET hostname SINCE {hours} hours ago LIMIT 50"
+            ),
+            f"SELECT uniques(hostname) as hosts FROM SystemSample SINCE {hours} hours ago LIMIT 50",
+            "get infrastructure hosts",
+        )
 
-    async def get_alert_violations(self, account_id: str, hours: int = 24) -> list[dict[str, Any]]:
+    async def get_alert_violations(self, account_id: str, hours: int = 24) -> list[dict[str, Any]] | ApiError:
         """Get recent alert violations"""
-        query = f"SELECT * FROM NrAiIncident WHERE state IN ('ACTIVATED', 'CLOSED') SINCE {hours} hours ago LIMIT 50"
-        try:
-            result = await self.query_nrql(account_id, query)
-            nrql_results = result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-            return nrql_results if nrql_results else []
-        except Exception as e:
-            logger.warning(f"Alert violations query failed, trying alternative: {e}")
-            # Fallback to alert events
-            try:
-                query = f"SELECT * FROM AlertEvent SINCE {hours} hours ago LIMIT 50"
-                result = await self.query_nrql(account_id, query)
-                return result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-            except Exception:
-                logger.warning("Both alert violation queries failed, returning empty list")
-                return []
+        return await self._query_nrql_with_fallback(
+            account_id,
+            (
+                f"SELECT * FROM NrAiIncident WHERE state IN ('ACTIVATED', 'CLOSED') "
+                f"SINCE {hours} hours ago LIMIT 50"
+            ),
+            f"SELECT * FROM AlertEvent SINCE {hours} hours ago LIMIT 50",
+            "get alert violations",
+        )
 
     async def get_deployments(
         self, account_id: str, app_name: str | None = None, hours: int = 168
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, Any]] | ApiError:
         """Get deployment markers and their impact"""
         if app_name:
-            query = f"SELECT * FROM Deployment WHERE appName = '{app_name}' SINCE {hours} hours ago LIMIT 20"
+            safe_name = escape_nrql_string(app_name)
+            primary = f"SELECT * FROM Deployment WHERE appName = '{safe_name}' SINCE {hours} hours ago LIMIT 20"
+            fallback = (
+                f"SELECT count(*) as transaction_count, average(duration) as avg_duration "
+                f"FROM Transaction WHERE appName = '{safe_name}' "
+                f"FACET timestamp SINCE {hours} hours ago LIMIT 20"
+            )
         else:
-            query = f"SELECT * FROM Deployment SINCE {hours} hours ago LIMIT 50"
+            primary = f"SELECT * FROM Deployment SINCE {hours} hours ago LIMIT 50"
+            fallback = (
+                f"SELECT count(*) as transaction_count, average(duration) as avg_duration "
+                f"FROM Transaction FACET appName SINCE {hours} hours ago LIMIT 20"
+            )
 
-        try:
-            result = await self.query_nrql(account_id, query)
-            nrql_results = result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-            return nrql_results if nrql_results else []
-        except Exception as e:
-            logger.warning(f"Deployments query failed, trying alternative: {e}")
-            # Fallback to transaction data with deployment correlation
-            try:
-                if app_name:
-                    query = f"SELECT count(*) as transaction_count, average(duration) as avg_duration FROM Transaction WHERE appName = '{app_name}' FACET timestamp SINCE {hours} hours ago LIMIT 20"
-                else:
-                    query = f"SELECT count(*) as transaction_count, average(duration) as avg_duration FROM Transaction FACET appName SINCE {hours} hours ago LIMIT 20"
-
-                result = await self.query_nrql(account_id, query)
-                return result.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
-            except Exception:
-                logger.warning("Deployments fallback query failed, returning empty list")
-                return []
+        return await self._query_nrql_with_fallback(account_id, primary, fallback, "get deployments")

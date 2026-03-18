@@ -56,8 +56,9 @@ Example Usage:
 
     parser.add_argument("--api-key", help="New Relic User API key")
     parser.add_argument("--account-id", help="New Relic account ID")
-    parser.add_argument("--region", choices=["US", "EU"], default="US", help="New Relic region (default: US)")
-    parser.add_argument("--timeout", type=int, default=30, help="HTTP timeout in seconds (default: 30)")
+    # Default None so unspecified args don't override env/file config during merge
+    parser.add_argument("--region", choices=["US", "EU"], default=None, help="New Relic region (default: US)")
+    parser.add_argument("--timeout", type=int, default=None, help="HTTP timeout in seconds (default: 30)")
     parser.add_argument("--config", help="Path to JSON configuration file")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 
@@ -85,7 +86,7 @@ def load_config(args: argparse.Namespace) -> NewRelicConfig:
         logger.error("Provide credentials via --api-key/--account-id, config file, or environment variables")
         raise ValueError("Invalid New Relic configuration")
 
-    logger.info(f"Configuration loaded - Region: {config.region}, Account: {config.account_id}")
+    logger.info(f"Configuration loaded - Region: {config.effective_region}, Account: {config.account_id}")
     return config
 
 

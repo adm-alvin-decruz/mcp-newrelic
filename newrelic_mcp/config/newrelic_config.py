@@ -14,33 +14,46 @@ from pathlib import Path
 class NewRelicConfig:
     """Configuration for New Relic MCP Server"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.api_key: str | None = None
         self.account_id: str | None = None
-        self.region: str = "US"
-        self.timeout: int = 30
+        self.region: str | None = None
+        self.timeout: int | None = None
+
+    @property
+    def effective_region(self) -> str:
+        """Resolved region, defaulting to US if not set"""
+        return self.region or "US"
+
+    @property
+    def effective_timeout(self) -> int:
+        """Resolved timeout, defaulting to 30s if not set"""
+        return self.timeout if self.timeout is not None else 30
 
     @classmethod
     def from_file(cls, config_path: str) -> "NewRelicConfig":
         """Load configuration from JSON file"""
         config = cls()
         if Path(config_path).exists():
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 data = json.load(f)
                 config.api_key = data.get("api_key")
                 config.account_id = data.get("account_id")
-                config.region = data.get("region", "US")
-                config.timeout = data.get("timeout", 30)
+                config.region = data.get("region")
+                config.timeout = data.get("timeout")
         return config
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> "NewRelicConfig":
-        """Load configuration from command line arguments"""
+        """Load configuration from command line arguments.
+
+        Only sets a value if the argument was explicitly provided (not None).
+        """
         config = cls()
         config.api_key = args.api_key
         config.account_id = args.account_id
-        config.region = args.region
-        config.timeout = args.timeout
+        config.region = args.region  # None when not provided (argparse default=None)
+        config.timeout = args.timeout  # None when not provided (argparse default=None)
         return config
 
     @classmethod
@@ -49,17 +62,18 @@ class NewRelicConfig:
         config = cls()
         config.api_key = os.getenv("NEW_RELIC_API_KEY")
         config.account_id = os.getenv("NEW_RELIC_ACCOUNT_ID")
-        config.region = os.getenv("NEW_RELIC_REGION", "US")
-        config.timeout = int(os.getenv("NEW_RELIC_TIMEOUT", "30"))
+        config.region = os.getenv("NEW_RELIC_REGION")
+        timeout_str = os.getenv("NEW_RELIC_TIMEOUT")
+        config.timeout = int(timeout_str) if timeout_str else None
         return config
 
     def merge_with(self, other: "NewRelicConfig") -> "NewRelicConfig":
-        """Merge with another config, preferring non-None values from other"""
+        """Merge with another config, preferring non-None values from other."""
         merged = NewRelicConfig()
         merged.api_key = other.api_key or self.api_key
         merged.account_id = other.account_id or self.account_id
-        merged.region = other.region if other.region != "US" else self.region
-        merged.timeout = other.timeout if other.timeout != 30 else self.timeout
+        merged.region = other.region or self.region
+        merged.timeout = other.timeout if other.timeout is not None else self.timeout
         return merged
 
     def is_valid(self) -> bool:
@@ -67,4 +81,7 @@ class NewRelicConfig:
         return bool(self.api_key and self.account_id)
 
     def __repr__(self) -> str:
-        return f"NewRelicConfig(region={self.region}, account_id={self.account_id}, timeout={self.timeout})"
+        return (
+            f"NewRelicConfig(region={self.effective_region}, "
+            f"account_id={self.account_id}, timeout={self.effective_timeout})"
+        )

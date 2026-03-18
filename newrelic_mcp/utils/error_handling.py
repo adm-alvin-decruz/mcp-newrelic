@@ -3,23 +3,24 @@
 import logging
 from typing import Any
 
+import httpx
+
+from ..types import ApiError
+
 logger = logging.getLogger(__name__)
 
+# Exception types that indicate API/network failures (not bugs in our code).
+# Used by client methods to catch expected failures without masking programming errors.
+API_ERRORS = (httpx.HTTPError, ValueError, KeyError, TypeError)
 
-def handle_api_error(operation_name: str, exception: Exception) -> dict[str, Any]:
+
+def handle_api_error(operation_name: str, exception: Exception) -> ApiError:
     """Standardized error handling for API operations"""
-    logger.error(f"{operation_name} failed: {exception}")
-    return {"error": str(exception)}
+    logger.error("%s failed: %s", operation_name, exception)
+    return ApiError(str(exception))
 
 
-def check_result_error(result: dict[str, Any], operation_name: str) -> dict[str, Any] | None:
-    """Check if result contains error and return formatted error response"""
-    if "error" in result:
-        return {"error": f"Failed to {operation_name}: {result['error']}"}
-    return None
-
-
-def handle_graphql_notification_errors(create_result: dict[str, Any], operation_name: str) -> dict[str, Any] | None:
+def handle_graphql_notification_errors(create_result: dict[str, Any], operation_name: str) -> ApiError | None:
     """Handle GraphQL notification API errors"""
     if create_result.get("errors"):
         errors = create_result["errors"]
@@ -27,10 +28,10 @@ def handle_graphql_notification_errors(create_result: dict[str, Any], operation_
             error = errors[0]
             error_type = error.get("__typename", "Unknown")
             error_msg = error.get("description", error.get("type", f"Error type: {error_type}"))
-            return {"error": f"{operation_name} failed: {error_msg}"}
+            return ApiError(f"{operation_name} failed: {error_msg}")
     return None
 
 
-def format_resource_error(result: dict[str, Any], section_title: str) -> str:
+def format_resource_error(error: ApiError, section_title: str) -> str:
     """Format error response for resource handlers"""
-    return f"# {section_title}\n\nError: {result['error']}"
+    return f"# {section_title}\n\nError: {error.message}"

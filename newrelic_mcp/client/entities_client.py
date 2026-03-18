@@ -7,13 +7,35 @@ Handles entity search, tagging, service levels, and synthetic monitors.
 import logging
 from typing import Any
 
+from ..types import ApiError
+from ..utils.error_handling import API_ERRORS, handle_api_error
+from ..utils.graphql_helpers import escape_nrql_string, extract_nrql_results
 from .base_client import BaseNewRelicClient
 
 logger = logging.getLogger(__name__)
 
+# Shared data path for entitySearch pagination
+_ENTITY_SEARCH_PATH = ["data", "actor", "entitySearch", "results"]
 
-class EntitiesClient(BaseNewRelicClient):
+
+class EntitiesClient:
     """Client for New Relic entity, tagging, service level, and synthetics APIs"""
+
+    def __init__(self, base: BaseNewRelicClient):
+        self._base = base
+
+    async def _execute_tag_mutation(
+        self, mutation: str, variables: dict[str, Any], mutation_key: str, operation: str
+    ) -> dict[str, Any] | ApiError:
+        """Execute a tagging mutation and check for errors."""
+        try:
+            result = await self._base.execute_graphql(mutation, variables)
+            errors = result.get("data", {}).get(mutation_key, {}).get("errors", [])
+            if errors:
+                return ApiError(errors[0].get("message", "Unknown error"))
+            return {"success": True}
+        except API_ERRORS as e:
+            return handle_api_error(operation, e)
 
     async def entity_search(
         self,
@@ -21,32 +43,29 @@ class EntitiesClient(BaseNewRelicClient):
         entity_type: str | None = None,
         domain: str | None = None,
         tags: list[dict[str, str]] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Search for entities using NerdGraph entitySearch.
+    ) -> list[dict[str, Any]] | ApiError:
+        """Search for entities using NerdGraph entitySearch with cursor-based pagination.
 
-        Note: NerdGraph returns a maximum of 200 results per page. Pagination
-        via nextCursor is not currently implemented, so results are capped at 200.
+        Follows nextCursor to retrieve all matching entities (up to 10 pages / ~2000 results).
         """
-        # Build query fragment
         parts = []
         if name:
-            parts.append(f"name LIKE '%{name}%'")
+            parts.append(f"name LIKE '%{escape_nrql_string(name)}%'")
         if entity_type:
-            parts.append(f"type = '{entity_type.upper()}'")
+            parts.append(f"type = '{escape_nrql_string(entity_type.upper())}'")
         if domain:
-            parts.append(f"domain = '{domain.upper()}'")
+            parts.append(f"domain = '{escape_nrql_string(domain.upper())}'")
         if tags:
             for tag in tags:
-                parts.append(f"tags.`{tag['key']}` = '{tag['value']}'")
+                parts.append(f"tags.`{escape_nrql_string(tag['key'])}` = '{escape_nrql_string(tag['value'])}'")
 
         query_string = " AND ".join(parts) if parts else "domain IN ('APM', 'INFRA', 'SYNTH', 'BROWSER')"
 
-        # entitySearch returns Outline types — use only common fields plus Outline-specific fragments
         query = """
-        {
+        query($searchQuery: String!, $cursor: String) {
           actor {
-            entitySearch(query: "%s") {
-              results {
+            entitySearch(query: $searchQuery) {
+              results(cursor: $cursor) {
                 entities {
                   guid
                   name
@@ -81,19 +100,25 @@ class EntitiesClient(BaseNewRelicClient):
             }
           }
         }
-        """ % query_string.replace('"', '\\"')
+        """
 
-        result = await self.execute_graphql(query)
-        search = result.get("data", {}).get("actor", {}).get("entitySearch", {})
-        entities = search.get("results", {}).get("entities", [])
-        return entities
+        try:
+            result = await self._base.paginate_graphql(
+                query,
+                {"searchQuery": query_string},
+                _ENTITY_SEARCH_PATH,
+                "entities",
+            )
+            return result.items
+        except API_ERRORS as e:
+            return handle_api_error("entity search", e)
 
-    async def get_entity_tags(self, guid: str) -> dict[str, Any]:
+    async def get_entity_tags(self, guid: str) -> dict[str, Any] | ApiError:
         """Get all tags for an entity by GUID"""
         query = """
-        {
+        query($guid: EntityGuid!) {
           actor {
-            entity(guid: "%s") {
+            entity(guid: $guid) {
               name
               entityType
               tags {
@@ -103,60 +128,78 @@ class EntitiesClient(BaseNewRelicClient):
             }
           }
         }
-        """ % guid
+        """
 
-        result = await self.execute_graphql(query)
-        entity = result.get("data", {}).get("actor", {}).get("entity", {})
-        return entity
+        try:
+            result = await self._base.execute_graphql(query, {"guid": guid})
+            entity: dict[str, Any] = result.get("data", {}).get("actor", {}).get("entity", {})
+            return entity
+        except API_ERRORS as e:
+            return handle_api_error("get entity tags", e)
 
-    async def add_tags_to_entity(self, guid: str, tags: list[dict[str, str]]) -> dict[str, Any]:
+    async def add_tags_to_entity(self, guid: str, tags: list[dict[str, str]]) -> dict[str, Any] | ApiError:
         """Add tags to an entity"""
-        tags_input = ", ".join([f'{{key: "{t["key"]}", values: ["{t["value"]}"]}}' for t in tags])
         mutation = """
-        mutation {
-          taggingAddTagsToEntity(guid: "%s", tags: [%s]) {
-            errors {
-              message
-              type
-            }
+        mutation($guid: EntityGuid!, $tags: [TaggingTagInput!]!) {
+          taggingAddTagsToEntity(guid: $guid, tags: $tags) {
+            errors { message type }
           }
         }
-        """ % (guid, tags_input)
+        """
+        tags_input = [{"key": t["key"], "values": [t["value"]]} for t in tags]
+        return await self._execute_tag_mutation(
+            mutation, {"guid": guid, "tags": tags_input}, "taggingAddTagsToEntity", "add tags to entity"
+        )
 
-        result = await self.execute_graphql(mutation)
-        errors = result.get("data", {}).get("taggingAddTagsToEntity", {}).get("errors", [])
-        if errors:
-            return {"error": errors[0].get("message", "Unknown error")}
-        return {"success": True}
-
-    async def delete_tags_from_entity(self, guid: str, tag_keys: list[str]) -> dict[str, Any]:
+    async def delete_tags_from_entity(self, guid: str, tag_keys: list[str]) -> dict[str, Any] | ApiError:
         """Delete tag keys from an entity"""
-        keys_input = ", ".join([f'"{k}"' for k in tag_keys])
         mutation = """
-        mutation {
-          taggingDeleteTagFromEntity(guid: "%s", tagKeys: [%s]) {
-            errors {
-              message
-              type
-            }
+        mutation($guid: EntityGuid!, $tagKeys: [String!]!) {
+          taggingDeleteTagFromEntity(guid: $guid, tagKeys: $tagKeys) {
+            errors { message type }
           }
         }
-        """ % (guid, keys_input)
+        """
+        return await self._execute_tag_mutation(
+            mutation, {"guid": guid, "tagKeys": tag_keys}, "taggingDeleteTagFromEntity", "delete tags from entity"
+        )
 
-        result = await self.execute_graphql(mutation)
-        errors = result.get("data", {}).get("taggingDeleteTagFromEntity", {}).get("errors", [])
-        if errors:
-            return {"error": errors[0].get("message", "Unknown error")}
-        return {"success": True}
+    async def replace_tags_on_entity(self, guid: str, tags: list[dict[str, str]]) -> dict[str, Any] | ApiError:
+        """Replace all tags on an entity (overwrites existing tags)"""
+        mutation = """
+        mutation($guid: EntityGuid!, $tags: [TaggingTagInput!]!) {
+          taggingReplaceTagsOnEntity(guid: $guid, tags: $tags) {
+            errors { message type }
+          }
+        }
+        """
+        tags_input = [{"key": t["key"], "values": [t["value"]]} for t in tags]
+        return await self._execute_tag_mutation(
+            mutation, {"guid": guid, "tags": tags_input}, "taggingReplaceTagsOnEntity", "replace tags on entity"
+        )
 
-    async def list_service_levels(self, account_id: str) -> list[dict[str, Any]]:
+    async def delete_tag_values(self, guid: str, tag_values: list[dict[str, str]]) -> dict[str, Any] | ApiError:
+        """Delete specific tag values from an entity (keeps the key if other values remain)"""
+        mutation = """
+        mutation($guid: EntityGuid!, $tagValues: [TaggingTagValueInput!]!) {
+          taggingDeleteTagValuesFromEntity(guid: $guid, tagValues: $tagValues) {
+            errors { message type }
+          }
+        }
+        """
+        tag_values_input = [{"key": t["key"], "value": t["value"]} for t in tag_values]
+        return await self._execute_tag_mutation(
+            mutation, {"guid": guid, "tagValues": tag_values_input},
+            "taggingDeleteTagValuesFromEntity", "delete tag values"
+        )
+
+    async def list_service_levels(self, account_id: str) -> list[dict[str, Any]] | ApiError:
         """List service level indicators (SLIs) for the account"""
-        # Service levels are entities with domain EXT and type SERVICE_LEVEL
         query = """
-        {
+        query($searchQuery: String!, $cursor: String) {
           actor {
-            entitySearch(query: "accountId = %s AND domain = 'EXT' AND type = 'SERVICE_LEVEL'") {
-              results {
+            entitySearch(query: $searchQuery) {
+              results(cursor: $cursor) {
                 entities {
                   guid
                   name
@@ -168,59 +211,58 @@ class EntitiesClient(BaseNewRelicClient):
                     values
                   }
                 }
+                nextCursor
               }
               count
             }
           }
         }
-        """ % account_id
+        """
 
-        entities = (
-            (await self.execute_graphql(query))
-            .get("data", {})
-            .get("actor", {})
-            .get("entitySearch", {})
-            .get("results", {})
-            .get("entities", [])
-        )
+        search_query = f"accountId = {int(account_id)} AND domain = 'EXT' AND type = 'SERVICE_LEVEL'"
 
-        # Enrich with SLI compliance data from NRQL
-        if entities:
-            nrql_result = await self.query_nrql(
-                account_id,
-                "SELECT latest(`newrelic.sli.good`) as good, latest(`newrelic.sli.valid`) as valid, "
-                "latest(`newrelic.sli.bad`) as bad "
-                "FROM Metric WHERE entity.type = 'SERVICE_LEVEL' "
-                "FACET entity.guid, entity.name SINCE 1 hour ago LIMIT 200"
+        try:
+            result = await self._base.paginate_graphql(
+                query,
+                {"searchQuery": search_query},
+                _ENTITY_SEARCH_PATH,
+                "entities",
             )
-            sli_rows = (
-                nrql_result.get("data", {})
-                .get("actor", {})
-                .get("account", {})
-                .get("nrql", {})
-                .get("results", [])
-            )
-            sli_by_guid = {r.get("entity.guid"): r for r in sli_rows if r.get("entity.guid")}
-            enriched = []
-            for e in entities:
-                sli_data = sli_by_guid.get(e.get("guid"), {})
-                compliance = None
-                if sli_data:
-                    good = sli_data.get("good", 0) or 0
-                    valid = sli_data.get("valid", 0) or 0
-                    compliance = round((good / valid * 100), 2) if valid > 0 else None
-                enriched.append({**e, "sliCompliance": compliance})
-            entities = enriched
+            all_entities = result.items
 
-        return entities or []
+            # Enrich with SLI compliance data from NRQL
+            if all_entities:
+                nrql_result = await self._base.query_nrql(
+                    account_id,
+                    "SELECT latest(`newrelic.sli.good`) as good, latest(`newrelic.sli.valid`) as valid, "
+                    "latest(`newrelic.sli.bad`) as bad "
+                    "FROM Metric WHERE entity.type = 'SERVICE_LEVEL' "
+                    "FACET entity.guid, entity.name SINCE 1 hour ago LIMIT 200",
+                )
+                sli_rows = extract_nrql_results(nrql_result)
+                sli_by_guid = {r.get("entity.guid"): r for r in sli_rows if r.get("entity.guid")}
+                enriched = []
+                for e in all_entities:
+                    sli_data = sli_by_guid.get(e.get("guid"), {})
+                    compliance = None
+                    if sli_data:
+                        good = sli_data.get("good", 0) or 0
+                        valid = sli_data.get("valid", 0) or 0
+                        compliance = round((good / valid * 100), 2) if valid > 0 else None
+                    enriched.append({**e, "sliCompliance": compliance})
+                all_entities = enriched
 
-    async def list_synthetic_monitors(self, account_id: str) -> list[dict[str, Any]]:
-        """List synthetic monitors via entity search"""
+            return all_entities
+        except API_ERRORS as e:
+            return handle_api_error("list service levels", e)
+
+    async def list_synthetic_monitors(self, account_id: str) -> list[dict[str, Any]] | ApiError:
+        """List synthetic monitors via entity search with cursor-based pagination"""
         query = """
-        {
+        query($searchQuery: String!, $cursor: String) {
           actor {
-            entitySearch(query: "domain = 'SYNTH' AND type = 'MONITOR' AND accountId = %s") {
-              results {
+            entitySearch(query: $searchQuery) {
+              results(cursor: $cursor) {
                 entities {
                   guid
                   name
@@ -242,30 +284,32 @@ class EntitiesClient(BaseNewRelicClient):
                     values
                   }
                 }
+                nextCursor
               }
               count
             }
           }
         }
-        """ % account_id
+        """
 
-        result = await self.execute_graphql(query)
-        entities = (
-            result.get("data", {})
-            .get("actor", {})
-            .get("entitySearch", {})
-            .get("results", {})
-            .get("entities", [])
-        )
-        return entities or []
+        search_query = f"domain = 'SYNTH' AND type = 'MONITOR' AND accountId = {int(account_id)}"
+        try:
+            result = await self._base.paginate_graphql(
+                query,
+                {"searchQuery": search_query},
+                _ENTITY_SEARCH_PATH,
+                "entities",
+            )
+            return result.items
+        except API_ERRORS as e:
+            return handle_api_error("list synthetic monitors", e)
 
-    async def get_synthetic_results(self, account_id: str, monitor_guid: str, hours: int = 24) -> dict[str, Any]:
+    async def get_synthetic_results(self, account_id: str, monitor_guid: str, hours: int = 24) -> dict[str, Any] | ApiError:
         """Get recent results for a synthetic monitor"""
-        # Get monitor name from entity
         entity_query = """
-        {
+        query($guid: EntityGuid!) {
           actor {
-            entity(guid: "%s") {
+            entity(guid: $guid) {
               name
               ... on SyntheticMonitorEntity {
                 monitorId
@@ -281,30 +325,26 @@ class EntitiesClient(BaseNewRelicClient):
             }
           }
         }
-        """ % monitor_guid
+        """
 
-        entity_result = await self.execute_graphql(entity_query)
-        entity = entity_result.get("data", {}).get("actor", {}).get("entity", {})
-        monitor_id = entity.get("monitorId")
+        try:
+            entity_result = await self._base.execute_graphql(entity_query, {"guid": monitor_guid})
+            entity = entity_result.get("data", {}).get("actor", {}).get("entity", {})
+            monitor_id = entity.get("monitorId")
 
-        results: dict[str, Any] = {"entity": entity, "results": []}
+            results: dict[str, Any] = {"entity": entity, "results": []}
 
-        if monitor_id:
-            nrql_query = (
-                f"SELECT result, duration, locationLabel, error "
-                f"FROM SyntheticCheck "
-                f"WHERE monitorId = '{monitor_id}' "
-                f"SINCE {hours} hours ago "
-                f"ORDER BY timestamp DESC LIMIT 50"
-            )
-            nrql_result = await self.query_nrql(account_id, nrql_query)
-            checks = (
-                nrql_result.get("data", {})
-                .get("actor", {})
-                .get("account", {})
-                .get("nrql", {})
-                .get("results", [])
-            )
-            results["results"] = checks
+            if monitor_id:
+                nrql_query = (
+                    f"SELECT result, duration, locationLabel, error "
+                    f"FROM SyntheticCheck "
+                    f"WHERE monitorId = '{escape_nrql_string(monitor_id)}' "
+                    f"SINCE {hours} hours ago "
+                    f"ORDER BY timestamp DESC LIMIT 50"
+                )
+                nrql_result = await self._base.query_nrql(account_id, nrql_query)
+                results["results"] = extract_nrql_results(nrql_result)
 
-        return results
+            return results
+        except API_ERRORS as e:
+            return handle_api_error("get synthetic results", e)

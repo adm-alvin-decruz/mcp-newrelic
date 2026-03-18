@@ -5,42 +5,28 @@ Provides robust validation to prevent security issues and improve reliability.
 """
 
 import re
-from typing import Any
 
 
 class ValidationError(Exception):
     """Custom exception for validation errors"""
 
-    pass
+
+# Pre-compiled patterns for performance
+_DANGEROUS_NRQL_PATTERNS = [
+    re.compile(r";\s*DROP\s+", re.IGNORECASE),
+    re.compile(r";\s*DELETE\s+", re.IGNORECASE),
+    re.compile(r";\s*UPDATE\s+", re.IGNORECASE),
+    re.compile(r";\s*INSERT\s+", re.IGNORECASE),
+    re.compile(r"<script\b", re.IGNORECASE),
+    re.compile(r"javascript:", re.IGNORECASE),
+    re.compile(r"vbscript:", re.IGNORECASE),
+]
+_NRQL_SELECT_PATTERN = re.compile(r"^\s*SELECT\s+", re.IGNORECASE)
+_GUID_PATTERN = re.compile(r"^[A-Za-z0-9+/=]+$")
 
 
 class InputValidator:
     """Validates and sanitizes user inputs"""
-
-    # NRQL injection patterns to detect
-    DANGEROUS_NRQL_PATTERNS = [
-        r";\s*DROP\s+",
-        r";\s*DELETE\s+",
-        r";\s*UPDATE\s+",
-        r";\s*INSERT\s+",
-        r"<script\b",
-        r"javascript:",
-        r"vbscript:",
-    ]
-
-    @classmethod
-    def validate_account_id(cls, account_id: str) -> str:
-        """Validate New Relic account ID format"""
-        if not account_id:
-            raise ValidationError("Account ID cannot be empty")
-
-        if not account_id.isdigit():
-            raise ValidationError("Account ID must be numeric")
-
-        if len(account_id) < 6 or len(account_id) > 12:
-            raise ValidationError("Account ID must be between 6-12 digits")
-
-        return account_id
 
     @classmethod
     def validate_nrql_query(cls, query: str) -> str:
@@ -51,14 +37,11 @@ class InputValidator:
         if len(query) > 10000:
             raise ValidationError("NRQL query too long (max 10,000 characters)")
 
-        # Check for dangerous patterns
-        query_lower = query.lower()
-        for pattern in cls.DANGEROUS_NRQL_PATTERNS:
-            if re.search(pattern, query_lower, re.IGNORECASE):
-                raise ValidationError(f"Query contains potentially dangerous pattern: {pattern}")
+        for pattern in _DANGEROUS_NRQL_PATTERNS:
+            if pattern.search(query):
+                raise ValidationError(f"Query contains potentially dangerous pattern: {pattern.pattern}")
 
-        # Basic NRQL syntax validation
-        if not re.match(r"^\s*SELECT\s+", query, re.IGNORECASE):
+        if not _NRQL_SELECT_PATTERN.match(query):
             raise ValidationError("NRQL query must start with SELECT")
 
         return query.strip()
@@ -69,8 +52,7 @@ class InputValidator:
         if not guid:
             raise ValidationError("GUID cannot be empty")
 
-        # New Relic GUIDs are base64-encoded strings
-        if not re.match(r"^[A-Za-z0-9+/=]+$", guid):
+        if not _GUID_PATTERN.match(guid):
             raise ValidationError("Invalid GUID format")
 
         if len(guid) < 10 or len(guid) > 100:
@@ -103,18 +85,3 @@ class InputValidator:
             raise ValidationError("Time range cannot exceed 1 year")
 
         return hours
-
-    @classmethod
-    def sanitize_arguments(cls, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Sanitize all arguments in a request"""
-        sanitized = {}
-
-        for key, value in arguments.items():
-            if isinstance(value, str):
-                # Remove null bytes and control characters
-                value = re.sub(r"[\x00-\x1f\x7f]", "", value)
-                value = value.strip()
-
-            sanitized[key] = value
-
-        return sanitized
