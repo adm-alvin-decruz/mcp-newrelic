@@ -629,7 +629,11 @@ def get_alert_tools() -> list[Tool]:
                 "properties": {
                     "name": {"type": "string", "description": "Name of the muting rule"},
                     "description": {"type": "string", "description": "Description of the muting rule (optional)"},
-                    "enabled": {"type": "boolean", "description": "Whether the rule is enabled (default: true)", "default": True},
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Whether the rule is enabled (default: true)",
+                        "default": True,
+                    },
                     "condition_operator": {
                         "type": "string",
                         "description": "Logical operator for combining conditions (AND, OR)",
@@ -649,7 +653,21 @@ def get_alert_tools() -> list[Tool]:
                                 "operator": {
                                     "type": "string",
                                     "description": "Comparison operator",
-                                    "enum": ["EQUALS", "NOT_EQUALS", "IN", "NOT_IN", "CONTAINS", "DOES_NOT_CONTAIN", "ENDS_WITH", "NOT_ENDS_WITH", "STARTS_WITH", "NOT_STARTS_WITH", "IS_BLANK", "IS_NOT_BLANK", "ANY"],
+                                    "enum": [
+                                        "EQUALS",
+                                        "NOT_EQUALS",
+                                        "IN",
+                                        "NOT_IN",
+                                        "CONTAINS",
+                                        "DOES_NOT_CONTAIN",
+                                        "ENDS_WITH",
+                                        "NOT_ENDS_WITH",
+                                        "STARTS_WITH",
+                                        "NOT_STARTS_WITH",
+                                        "IS_BLANK",
+                                        "IS_NOT_BLANK",
+                                        "ANY",
+                                    ],
                                 },
                                 "values": {
                                     "type": "array",
@@ -672,11 +690,25 @@ def get_alert_tools() -> list[Tool]:
                                 "description": "Recurrence (DAILY, WEEKLY, MONTHLY)",
                                 "enum": ["DAILY", "WEEKLY", "MONTHLY"],
                             },
-                            "endRepeat": {"type": "string", "description": "When to stop repeating (ISO 8601, optional)"},
+                            "endRepeat": {
+                                "type": "string",
+                                "description": "When to stop repeating (ISO 8601, optional)",
+                            },
                             "weeklyRepeatDays": {
                                 "type": "array",
                                 "description": "Days for WEEKLY repeat",
-                                "items": {"type": "string", "enum": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]},
+                                "items": {
+                                    "type": "string",
+                                    "enum": [
+                                        "MONDAY",
+                                        "TUESDAY",
+                                        "WEDNESDAY",
+                                        "THURSDAY",
+                                        "FRIDAY",
+                                        "SATURDAY",
+                                        "SUNDAY",
+                                    ],
+                                },
                             },
                         },
                     },

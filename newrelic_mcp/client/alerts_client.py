@@ -877,9 +877,7 @@ class AlertsClient:
             rule_input["schedule"] = schedule
 
         try:
-            result = await self._base.execute_graphql(
-                mutation, {"accountId": int(account_id), "rule": rule_input}
-            )
+            result = await self._base.execute_graphql(mutation, {"accountId": int(account_id), "rule": rule_input})
 
             rule_result = self._base._extract_mutation_result(
                 result, "alertsMutingRuleCreate", error_message="Failed to create muting rule"

@@ -339,8 +339,7 @@ class CreateMutingRuleHandler(ToolHandlerStrategy):
             schedule_str = f"\nSchedule: {repeat} {start} - {end} ({tz})"
 
         return self._create_success_response(
-            f"Muting rule '{name}' created successfully!\n"
-            f"Rule ID: {rule_id}\nEnabled: {enabled}{schedule_str}"
+            f"Muting rule '{name}' created successfully!\nRule ID: {rule_id}\nEnabled: {enabled}{schedule_str}"
         )
 
 
