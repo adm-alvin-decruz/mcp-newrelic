@@ -139,4 +139,4 @@ class ToolHandlers:
             return [TextContent(type="text", text=f"Error: {e}")]
         except Exception as e:
             logger.error("Error calling tool %s: %s", name, e)
-            return [TextContent(type="text", text=f"Error executing {name}: {str(e)}")]
+            return [TextContent(type="text", text=f"Error executing {name}: an unexpected error occurred. Check server logs for details.")]
