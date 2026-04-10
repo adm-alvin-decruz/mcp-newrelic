@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Exception types that indicate API/network failures (not bugs in our code).
 # Used by client methods to catch expected failures without masking programming errors.
-API_ERRORS = (httpx.HTTPError, ValueError, KeyError, TypeError)
+API_ERRORS = (httpx.HTTPError, ValueError)
 
 
 def handle_api_error(operation_name: str, exception: Exception) -> ApiError:
